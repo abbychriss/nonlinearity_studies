@@ -113,7 +113,7 @@ run-nonlinearity-studies [OPTIONS] <file_string>
 First let's stitch 10 images together from examples/images/ten-images folder and run the analysis script on these images. Navigate to project directory in terminal and run:
 ```bash
 ./nonlinearity_studies/run_nonlinearity_studies.py \
-    "examples/images/ten-images/*"
+    "examples/images/ten-images/*" \
     --stitch-fits \
     --plot-zero-one-peaks \
     --plot-nonlinearity \
@@ -123,7 +123,7 @@ First let's stitch 10 images together from examples/images/ten-images folder and
 Now every time we want to analyze the stitched image again, we can pass the stitched image directly into the script instead of restitching and overwriting the stitched image, as follows:
 ```bash
 ./nonlinearity_studies/run_nonlinearity_studies.py \
-    "combined-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits"
+    "combined-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
     --plot-zero-one-peaks \
     --plot-nonlinearity \
     --save-plots
