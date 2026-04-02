@@ -13,12 +13,11 @@ This package provides tools to:
 
 ## Features
 
-- **Noise & Gain Calculation**: Determines detector noise and gain from charge data
-- **Peak Analysis**: Identifies and gets properties of zero and one electron peaks
-- **Nonlinearity Measurement**: Quantifies detector response linearity vs. charge
-- **Visualization**: Creates histograms and plots of charge distributions
-- **Batch Processing**: Command-line interface for processing multiple datasets
-- **Image Stitching**: Combine multi-extension FITS images
+- **Noise & Gain Calculation**: Determines pedestal, noise and gain from data and converts to e-
+- **Peak Finder**: Finds all electron peaks in charge distribution
+- **Nonlinearity Computation**: Quantifies detector response linearity as a function of charge
+- **Visualization**: Creates histograms of charge distribution and plots nonlinearity curve
+- **Image Stitching**: Combine multi-extension FITS images and run analysis on stitched image
 
 ## Installation
 
@@ -33,7 +32,7 @@ cd nonlinearity_studies
 
 ### From source (development mode)
 
-Clone the repository and install in development mode:
+Clone the repository and install in development mode (the -e makes files editable):
 
 ```bash
 cd /path/to/nonlinearity_studies
