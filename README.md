@@ -23,19 +23,18 @@ This package provides tools to:
 
 ### Clone the repository
 
-Navigate to project directory then run:
+Navigate to your root project directory then run:
 ```bash
-mkdir nonlinearity_studies
 git clone https://github.com/abbychriss/nonlinearity_studies.git
 cd nonlinearity_studies
 ```
 
-### From source (development mode)
+### Install package in development mode
 
-Clone the repository and install in development mode (the -e makes files editable):
+Install package in development mode (the -e makes files editable):
 
 ```bash
-cd /path/to/nonlinearity_studies
+cd nonlinearity_studies
 pip install -e .
 ```
 
