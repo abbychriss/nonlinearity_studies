@@ -114,19 +114,20 @@ First let's stitch 10 images together from examples/images/ten-images folder and
 ```bash
 ./nonlinearity_studies/run_nonlinearity_studies.py \
     "examples/images/ten-images/*" \
-    --stitch-fits \
-    --plot-zero-one-peaks \
-    --plot-nonlinearity \
-    --save-plots
+    --stitch_fits \
+    --plot_zero_one_peaks \
+    --plot_all_peaks \
+    --plot_nonlinearity \
+    --save_plots
 ```
   
 Now every time we want to analyze the stitched image again, we can pass the stitched image directly into the script instead of restitching and overwriting the stitched image, as follows:
 ```bash
 ./nonlinearity_studies/run_nonlinearity_studies.py \
     "combined-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
-    --plot-zero-one-peaks \
-    --plot-nonlinearity \
-    --save-plots
+    --plot_zero_one-peaks \
+    --plot_nonlinearity \
+    --save_plots
 ```
 where the key change was removing the --stitch-fits flag.
 
