@@ -4,15 +4,6 @@ A Python package for analyzing nonlinearity in CCDs.
 
 ## Overview
 
-This package provides tools to:
-- Load and analyze FITS format detector data
-- Calculate noise and gain characteristics from zero and one electron peaks
-- Measure nonlinearity across different charge ranges
-- Generate publication-quality plots of charge distributions and nonlinearity curves
-- Process data using command-line tools for batch analysis
-
-## Features
-
 - **Noise & Gain Calculation**: Determines pedestal, noise and gain from data and converts to e-
 - **Peak Finder**: Finds all electron peaks in charge distribution
 - **Nonlinearity Computation**: Quantifies detector response linearity as a function of charge
