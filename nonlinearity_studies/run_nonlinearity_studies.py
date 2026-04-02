@@ -53,6 +53,37 @@ else:
         plot_nonlinearity
     )
 
+def _derive_data_path(file_path_str):
+    """
+    Derive the data path from the file path.
+    If the path contains 'combined-fits', returns its parent directory.
+    Otherwise, returns the parent directory of the file.
+    
+    Args:
+        file_path_str: The file path string (can contain glob patterns)
+        
+    Returns:
+        Path: The derived data path
+    """
+    # Remove glob patterns for path analysis
+    clean_path_str = file_path_str.replace('*', '').rstrip('/')
+    file_path = Path(clean_path_str)
+    
+    # Convert to absolute path if relative
+    if not file_path.is_absolute():
+        file_path = Path.cwd() / file_path
+    
+    # Walk up the path to find 'combined-fits'
+    for parent in [file_path] + list(file_path.parents):
+        if 'combined-fits' in parent.parts:
+            # Return the parent of combined-fits
+            combined_fits_index = parent.parts.index('combined-fits')
+            return Path(*parent.parts[:combined_fits_index])
+    
+    # If combined-fits not found, return parent of the file/directory
+    return file_path.parent
+
+
 def main(args=None):
     """
     The main executable function of the script.
@@ -82,19 +113,20 @@ def main(args=None):
     do_plot_nonlinearity = args.plot_nonlinearity
     save_plots = args.save_plots
 
-    data_path = Path('/Users/abbychriss/Desktop/Privitera_335/data/test_chamber/VR_studies/')
+    # Derive data_path from file_path input
+    data_path = _derive_data_path(args.file_string)
+    
     if do_stitch_images:
         # Stitch images together by extension
         stitch_fits_image_string = str(file_path)
-        stitched_file = stitch_fits(data_path, directory='VR-4/', image=stitch_fits_image_string, 
+        stitched_file = stitch_fits(data_path, directory='*/', image=stitch_fits_image_string, 
                                      out_path='combined-fits/', print_header=False)
         image_name = Path(stitched_file).name
     else:
         image_name = file_path.name
-        abs_data_path = file_path.parent
 
-
-    fig_path = Path("/Users/abbychriss/Desktop/Privitera_335/plots/nonlinearity_studies/")
+    # Derive fig_path from data_path
+    fig_path = data_path.parent / 'plots'
     print(f'Analyzing image: {image_name}')
     # Get data from fits file
     data_ext = get_fits(str(data_path / 'combined-fits' / image_name))
