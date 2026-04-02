@@ -5,8 +5,8 @@ from scipy.optimize import curve_fit
 from scipy.signal import find_peaks as scipy_find_peaks
 import math
 
+from pathlib import Path
 from glob import glob
-import os
 
 #---------------- ANALYSIS FUNCTIONS ----------------------------
 
@@ -175,11 +175,12 @@ def plot_zero_one_peaks(data_ext,
                         fig_path='./', file='zero_one_peaks', 
                         dpi=350):
 
-
-    if file !='zero_one_peaks':
-        fig_name=fig_path+file[:-5]+'_zero_one_peaks'
+    fig_path = Path(fig_path)
+    if file != 'zero_one_peaks':
+        base_name = file[:-5] + '_zero_one_peaks'
     else:
-        fig_name=fig_path+file
+        base_name = file
+    fig_name = fig_path / base_name
 
     if plot_individual:
         for ext, data in enumerate(data_ext):
@@ -227,8 +228,9 @@ def plot_zero_one_peaks(data_ext,
                 ax.set_ylim(ylim)
 
             if save_plots:
-                plt.savefig(fig_name+f'_EXT{ext}.jpeg',dpi=dpi)
-                print(f'Saved plots to {fig_name}_EXT{ext}.jpeg')
+                output_path = fig_name.with_stem(fig_name.stem + f'_EXT{ext}').with_suffix('.jpeg')
+                plt.savefig(str(output_path), dpi=dpi)
+                print(f'Saved plots to {output_path}')
             plt.show()
 
         if do_convert_to_electrons:
@@ -281,8 +283,9 @@ def plot_zero_one_peaks(data_ext,
                     ax.set_ylim(ylim)
 
                 if save_plots:
-                    plt.savefig(fig_name+f'_electrons_EXT{ext}.jpeg',dpi=dpi)
-                    print(f'Saved plot to {fig_name}_electrons_EXT{ext}.jpeg')
+                    output_path = fig_name.with_stem(fig_name.stem + f'_electrons_EXT{ext}').with_suffix('.jpeg')
+                    plt.savefig(str(output_path), dpi=dpi)
+                    print(f'Saved plot to {output_path}')
                 plt.show()
 
     if plot_together:
@@ -333,8 +336,9 @@ def plot_zero_one_peaks(data_ext,
             if ylim!='none':
                 ax.set_ylim(ylim)
         if save_plots:
-            plt.savefig(fig_name+'.jpeg',dpi=dpi)
-            print(f'Saved plot to {fig_name}.jpeg')
+            output_path = fig_name.with_suffix('.jpeg')
+            plt.savefig(str(output_path), dpi=dpi)
+            print(f'Saved plot to {output_path}')
         plt.show()
 
         if do_convert_to_electrons:
@@ -389,8 +393,9 @@ def plot_zero_one_peaks(data_ext,
                     ax.set_ylim(ylim)
 
             if save_plots:
-                plt.savefig(fig_name+'_electrons.jpeg',dpi=dpi)
-                print(f'Saved plot to {fig_name}_electrons.jpeg')
+                output_path = fig_name.with_stem(fig_name.stem + '_electrons').with_suffix('.jpeg')
+                plt.savefig(str(output_path), dpi=dpi)
+                print(f'Saved plot to {output_path}')
             plt.show()
 
 
@@ -410,11 +415,12 @@ def plot_all_peaks(counts_ext,
                    fig_path='./', file='peak_finder', 
                    dpi=350):
 
-
-    if file !='peak_finder':
-        fig_name=fig_path+file[:-5]+'_peak_finder'
+    fig_path = Path(fig_path)
+    if file != 'peak_finder':
+        base_name = file[:-5] + '_peak_finder'
     else:
-        fig_name=fig_path+file
+        base_name = file
+    fig_name = fig_path / base_name
 
     if plot_individual:
         for ext, counts in enumerate(counts_ext):
@@ -449,8 +455,9 @@ def plot_all_peaks(counts_ext,
                         fontsize=10)
                     
             if save_plots:
-                plt.savefig(fig_name+f'_EXT{ext}.jpeg',dpi=dpi)
-                print(f'Saved plot to {fig_name}_EXT{ext}.jpeg')
+                output_path = fig_name.with_stem(fig_name.stem + f'_EXT{ext}').with_suffix('.jpeg')
+                plt.savefig(str(output_path), dpi=dpi)
+                print(f'Saved plot to {output_path}')
             plt.show()
 
     if plot_together:
@@ -490,8 +497,9 @@ def plot_all_peaks(counts_ext,
                         fontsize=10)
         
         if save_plots:
-            plt.savefig(fig_name+'.jpeg',dpi=dpi)
-            print(f'Saved plot to {fig_name}.jpeg')
+            output_path = fig_name.with_suffix('.jpeg')
+            plt.savefig(str(output_path), dpi=dpi)
+            print(f'Saved plot to {output_path}')
         plt.show()
 
 
@@ -512,10 +520,12 @@ def plot_nonlinearity(peaks_ext,
                       fig_path='./', file='nonlinearity_curve', 
                       dpi=350):
 
-    if file !='nonlinearity_curve':
-        fig_name=fig_path+file[:-5]+'_nonlinearity'
+    fig_path = Path(fig_path)
+    if file != 'nonlinearity_curve':
+        base_name = file[:-5] + '_nonlinearity'
     else:
-        fig_name=fig_path+file
+        base_name = file
+    fig_name = fig_path / base_name
 
     if plot_individual:
         for ext, peaks in enumerate(peaks_ext):
@@ -546,8 +556,9 @@ def plot_nonlinearity(peaks_ext,
                 ax.set_xlim(xlim)
 
             if save_plots:
-                plt.savefig(fig_name+f'_EXT{ext}.jpeg',dpi=dpi)
-                print(f'Saved plot to {fig_name}_EXT{ext}.jpeg')
+                output_path = fig_name.with_stem(fig_name.stem + f'_EXT{ext}').with_suffix('.jpeg')
+                plt.savefig(str(output_path), dpi=dpi)
+                print(f'Saved plot to {output_path}')
             plt.show()
             
     if plot_together:
@@ -581,8 +592,9 @@ def plot_nonlinearity(peaks_ext,
                 ax.set_xlim(xlim)
 
     if save_plots:
-        plt.savefig(fig_name+'.jpeg',dpi=dpi)
-        print(f'Saved plot to {fig_name}.jpeg')
+        output_path = fig_name.with_suffix('.jpeg')
+        plt.savefig(str(output_path), dpi=dpi)
+        print(f'Saved plot to {output_path}')
     plt.show()
 
 
@@ -595,43 +607,22 @@ def get_fits(file_input):
 
     Parameters
     ----------
-    file_input : str
-        Can be:
-        - Absolute path to a FITS file
-        - Filename (searched recursively under project_root/data)
-        - Relative path inside project_root/data
+    file_input : str or Path
+        Path to the FITS file (absolute or relative to current working directory)
 
     Returns
     -------
     ext_charge : list
         List of data arrays from extensions 1–4
     """
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    # Case 1: absolute path
-    if os.path.isabs(file_input):
-        file_path = file_input
-
-    else:
-        data_root = os.path.join(project_root, "data")
-
-        # Case 2: relative path inside data/
-        candidate_path = os.path.join(data_root, file_input)
-        if os.path.exists(candidate_path):
-            file_path = candidate_path
-        else:
-            # Case 3: just a filename → search recursively
-            matches = glob(os.path.join(data_root, "**", file_input), recursive=True)
-
-            if len(matches) == 0:
-                raise FileNotFoundError(f"No file found matching '{file_input}' in {data_root}")
-            elif len(matches) > 1:
-                print(f"Warning: multiple matches found. Using first:\n{matches[0]}")
-                print(matches)
-
-            file_path = matches[0]
+    file_path = Path(file_input).resolve()
+    
+    # Check if file exists
+    if not file_path.exists():
+        raise FileNotFoundError(f"FITS file not found: {file_path}")
 
     # Load FITS file
-    with fits.open(file_path) as hdu_list:
+    with fits.open(str(file_path)) as hdu_list:
         ext_charge = [hdu_list[i].data for i in range(1, 5)]
 
     return ext_charge
@@ -672,6 +663,7 @@ def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, 
         noise = double_gauss_popts[ext][0]
         gain = gains[ext]
 
+        print(f'\nEXT {ext}:')
         counts, edges, peaks, centers, properties, hist_range = find_all_peaks(data, 
                                                                                width, 
                                                                                buffer, 

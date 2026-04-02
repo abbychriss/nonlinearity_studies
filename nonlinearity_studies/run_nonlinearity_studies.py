@@ -56,32 +56,30 @@ else:
 def _derive_data_path(file_path_str):
     """
     Derive the data path from the file path.
-    If the path contains 'combined-fits', returns its parent directory.
-    Otherwise, returns the parent directory of the file.
     
     Args:
-        file_path_str: The file path string (can contain glob patterns)
+        file_path_str: The file path string (can contain glob patterns like '*')
         
     Returns:
-        Path: The derived data path
+        tuple: (directory_path, image_pattern) where directory_path is the path to search
+               and image_pattern is the file pattern to match
     """
-    # Remove glob patterns for path analysis
-    clean_path_str = file_path_str.replace('*', '').rstrip('/')
-    file_path = Path(clean_path_str)
+    # Remove trailing slashes
+    clean_path_str = file_path_str.rstrip('/')
     
-    # Convert to absolute path if relative
-    if not file_path.is_absolute():
-        file_path = Path.cwd() / file_path
+    # Split path and extract the image pattern (last component)
+    parts = clean_path_str.split('/')
+    image_pattern = parts[-1]  # e.g., '*' or '*.fz'
     
-    # Walk up the path to find 'combined-fits'
-    for parent in [file_path] + list(file_path.parents):
-        if 'combined-fits' in parent.parts:
-            # Return the parent of combined-fits
-            combined_fits_index = parent.parts.index('combined-fits')
-            return Path(*parent.parts[:combined_fits_index])
+    # Directory path is everything before the pattern
+    directory_path = '/'.join(parts[:-1])  # e.g., 'examples/images/ten-images'
     
-    # If combined-fits not found, return parent of the file/directory
-    return file_path.parent
+    # Convert to Path and make absolute if relative
+    dir_path = Path(directory_path)
+    if not dir_path.is_absolute():
+        dir_path = Path.cwd() / dir_path
+    
+    return dir_path, image_pattern
 
 
 def main(args=None):
@@ -113,23 +111,50 @@ def main(args=None):
     do_plot_nonlinearity = args.plot_nonlinearity
     save_plots = args.save_plots
 
-    # Derive data_path from file_path input
-    data_path = _derive_data_path(args.file_string)
-    
     if do_stitch_images:
-        # Stitch images together by extension
-        stitch_fits_image_string = str(file_path)
-        stitched_file = stitch_fits(data_path, directory='', image=stitch_fits_image_string, 
-                                     out_path='combined-fits/', print_header=False)
-        image_name = Path(stitched_file).name
+        # Split input path to get directory and image pattern
+        image_dir, image_pattern = _derive_data_path(args.file_string)
+        
+        # Check if path already contains 'combined-fits'
+        if 'combined-fits' in image_dir.parts:
+            # If combined-fits is already in the path, find its parent as data_path
+            combined_fits_idx = image_dir.parts.index('combined-fits')
+            data_path = Path(*image_dir.parts[:combined_fits_idx])
+            # Don't need to stitch - files are already there
+            image_name = next(Path(image_dir).glob(image_pattern)).name
+        else:
+            # Raw images case - stitch them
+            data_path = image_dir.parent
+            stitched_file = stitch_fits(data_path, directory=image_dir.name, image=image_pattern, 
+                                         out_path='combined-fits/', print_header=False)
+            image_name = Path(stitched_file).name
     else:
+        file_path = Path(args.file_string)
+        
+        # Check if path contains 'combined-fits' to find the base data_path
+        if 'combined-fits' in file_path.parts:
+            combined_fits_idx = file_path.parts.index('combined-fits')
+            data_path = Path(*file_path.parts[:combined_fits_idx])
+        else:
+            data_path = file_path.parent
+        
         image_name = file_path.name
 
     # Derive fig_path from data_path
     fig_path = data_path.parent / 'plots'
+    fig_path.mkdir(parents=True, exist_ok=True)
+    
     print(f'Analyzing image: {image_name}')
+    
     # Get data from fits file
-    data_ext = get_fits(str(data_path / 'combined-fits' / image_name))
+    if do_stitch_images:
+        # In stitch mode, files are in combined-fits subdirectory
+        fits_path = str(data_path / 'combined-fits' / image_name)
+    else:
+        # In non-stitch mode, use the input path directly
+        fits_path = args.file_string
+    
+    data_ext = get_fits(fits_path)
 
     # Fit zeroth and first electron peaks to double gaussians
     zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, \
@@ -263,7 +288,7 @@ You can enable any combination of steps using flags below.""",
                        help="Plot entire charge distribution with line at each peak")
     parser.add_argument("-g", "--get_nonlinearity_at", action="store_true", default=False, 
                        help="Estimate nonlinearity at specified charge value(s) using parabolic fit")
-    parser.add_argument("-n", "--plot_nonlinearity", action="store_true", default=True, 
+    parser.add_argument("-n", "--plot_nonlinearity", action="store_true", default=False, 
                        help="Plot nonlinearity curve with quadratic fit")
     parser.add_argument("-s", "--save_plots", action="store_true", default=False, 
                        help="Save all plots as jpeg images")
