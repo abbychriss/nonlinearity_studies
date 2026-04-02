@@ -128,10 +128,14 @@ Now every time we want to analyze the stitched image again, we can pass the stit
     --plot-nonlinearity \
     --save-plots
 ```
-
-If we want to just get the nonlinearity
-
 where the key change was removing the --stitch-fits flag.
+
+If we want to just get the nonlinearity at specific charge values we can run
+```bash
+./nonlinearity_studies/run_nonlinearity_studies.py \
+    "combined-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
+    --get_nonlinearity_at 10 50 500 100
+```
 
 ## Core Functions
 
