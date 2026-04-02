@@ -255,17 +255,17 @@ You can enable any combination of steps using flags below.""",
 
     parser.add_argument('file_string', type=str, 
                        help='Absolute or relative path to image file (.fz or .fits accepted)')
-    parser.add_argument("-f", "--stitch-fits", action="store_true", default=False, 
+    parser.add_argument("-f", "--stitch_fits", action="store_true", default=False, 
                        help="Stitch FITS files by extension")
-    parser.add_argument("-z", "--plot-zero-one-peaks", action="store_true", default=False, 
-                       help="Plot fits to zero+one electron peaks")
-    parser.add_argument("-a", "--plot-all-peaks", action="store_true", default=False, 
+    parser.add_argument("-z", "--plot_zero_one_peaks", action="store_true", default=False, 
+                       help="Plot fits to zero/one electron peaks")
+    parser.add_argument("-a", "--plot_all_peaks", action="store_true", default=False, 
                        help="Plot entire charge distribution with line at each peak")
-    parser.add_argument("-g", "--get-nonlinearity-at", action="store_true", default=False, 
+    parser.add_argument("-g", "--get_nonlinearity_at", action="store_true", default=False, 
                        help="Estimate nonlinearity at specified charge value(s) using parabolic fit")
-    parser.add_argument("-n", "--plot-nonlinearity", action="store_true", default=True, 
+    parser.add_argument("-n", "--plot_nonlinearity", action="store_true", default=True, 
                        help="Plot nonlinearity curve with quadratic fit")
-    parser.add_argument("-s", "--save-plots", action="store_true", default=False, 
+    parser.add_argument("-s", "--save_plots", action="store_true", default=False, 
                        help="Save all plots as jpeg images")
 
     args = parser.parse_args()
