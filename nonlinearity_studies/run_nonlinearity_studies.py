@@ -119,7 +119,7 @@ def main(args=None):
     if do_stitch_images:
         # Stitch images together by extension
         stitch_fits_image_string = str(file_path)
-        stitched_file = stitch_fits(data_path, directory='*/', image=stitch_fits_image_string, 
+        stitched_file = stitch_fits(data_path, directory='', image=stitch_fits_image_string, 
                                      out_path='combined-fits/', print_header=False)
         image_name = Path(stitched_file).name
     else:
