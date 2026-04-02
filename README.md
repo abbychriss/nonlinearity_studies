@@ -29,16 +29,18 @@ git clone https://github.com/abbychriss/nonlinearity_studies.git
 cd nonlinearity_studies
 ```
 
-### Install package in development mode
+### Install package 
 
-Install package in development mode (the -e makes files editable):
+#### Development mode
+
+Install package in development mode (the -e flag makes files editable):
 
 ```bash
 cd nonlinearity_studies
 pip install -e .
 ```
 
-### Regular installation
+#### OR regular installation
 
 ```bash
 pip install .
@@ -86,7 +88,7 @@ There are three ways to run the analysis:
 python -m nonlinearity_studies.run_nonlinearity_studies [OPTIONS] <file_string>
 ```
 
-**2. As a direct executable** (requires executable permissions):
+**2. As a direct executable** (requires executable permissions - should be activated automatically but if not run ):
 ```bash
 chmod +x nonlinearity_studies/run_nonlinearity_studies.py
 ./nonlinearity_studies/run_nonlinearity_studies.py [OPTIONS] <file_string>
@@ -106,14 +108,15 @@ run-nonlinearity-studies [OPTIONS] <file_string>
 - `--plot-nonlinearity`: Plot nonlinearity curve
 - `--save-plots`: Save generated plots to disk
 
-#### Example
+## Examples
 
+Let's stitch 10 images together from examples/images/ten-images folder and run the nonlinearity analysis script on these images. Navigate to project directory in terminal and run:
 ```bash
-python -m nonlinearity_studies.run_nonlinearity_studies \
-    --stitch-fits \
+./nonlinearity_studies/run_nonlinearity_studies \
+    --stitch-fits "examples/images/ten-images/*" \
+    --plot-zero-one-peaks \
     --plot-nonlinearity \
     --save-plots \
-    "my_dataset.fits"
 ```
 
 ## Core Functions
@@ -156,22 +159,15 @@ The `stitch_fits` utility is included in the package for stitching multi-extensi
 
 ## Project Structure
 
-The original project structure includes:
+The project structure includes:
 
 ```
 nonlinearity_studies/
+├── examples/                    # Example directory (images, scripts, etc)
 ├── nonlinearity_studies/        # Main package directory
-├── extra/                       # Extra analysis scripts and older implementations
 ├── setup.py                     # Package configuration
 └── README.md                    # This file
 ```
-
-## Examples
-
-See the `extra/` directory for additional example scripts and analysis utilities, including:
-
-- `plot_sigma_xy.py`: Plot size of clusters vs energy to visualize nonlinearity in front side and back side Fe-55 events (work in progress)
-- `vijay_linearity_study.py`: Alternative linearity analysis approach
 
 ## License
 
@@ -180,22 +176,3 @@ This project is part of the Privitera research group at the University of Chicag
 ## Authors
 
 - Abby Chriss
-
-## References
-
-For information on detector linearity studies and gain/noise calculations, see the extra analysis scripts in the `extra/` directory.
-
-## FAQ
-
-**Q: What FITS format does this support?**
-A: The package supports standard FITS files with multi-extension capability. See `astropy.io.fits` documentation for supported formats.
-
-**Q: Can I process multiple files?**
-A: Yes, use the command-line interface with the `--stitch-fits` option for batch processing.
-
-**Q: Is the stitch_fits utility included?**
-A: Yes! The `stitch_fits` module is included in the package for stitching multi-extension FITS files. You can use it directly via `from nonlinearity_studies import stitch_fits` or via the CLI with `--stitch-fits`.
-
-## Support
-
-For issues, questions, or contributions, please contact the package author or check the project repository.
