@@ -107,7 +107,11 @@ def main(args=None):
     do_stitch_images = args.stitch_fits
     do_plot_zero_one_peaks = args.plot_zero_one_peaks
     do_plot_all_peaks = args.plot_all_peaks
-    do_get_nonlinearity_at = args.get_nonlinearity_at
+    get_nonlinearity_at_charges = args.get_nonlinearity_at
+    # Unpack single value from list for cleaner interface
+    if get_nonlinearity_at_charges is not None and len(get_nonlinearity_at_charges) == 1:
+        get_nonlinearity_at_charges = get_nonlinearity_at_charges[0]
+    do_get_nonlinearity_at = get_nonlinearity_at_charges is not None
     do_plot_nonlinearity = args.plot_nonlinearity
     save_plots = args.save_plots
 
@@ -189,7 +193,7 @@ def main(args=None):
 
     # Get nonlinearity at specified charge value(s)
     if do_get_nonlinearity_at:
-        get_nonlinearity_at_ext([10, 500, 1000, 1500], parabola_coeffs, parabola_pcovs, fit_range_right_ext, print_values=True)
+        get_nonlinearity_at_ext(get_nonlinearity_at_charges, parabola_coeffs, parabola_pcovs, fit_range_right_ext, print_values=True)
 
     # Fit a double gaussian to zero + 1 electron peak in each extension
     if do_plot_zero_one_peaks:
@@ -286,7 +290,7 @@ You can enable any combination of steps using flags below.""",
                        help="Plot fits to zero/one electron peaks")
     parser.add_argument("-a", "--plot_all_peaks", action="store_true", default=False, 
                        help="Plot entire charge distribution with line at each peak")
-    parser.add_argument("-g", "--get_nonlinearity_at", action="store_true", default=False, 
+    parser.add_argument("-g", "--get_nonlinearity_at", nargs='+', type=float, default=None,
                        help="Estimate nonlinearity at specified charge value(s) using parabolic fit")
     parser.add_argument("-n", "--plot_nonlinearity", action="store_true", default=False, 
                        help="Plot nonlinearity curve with quadratic fit")
