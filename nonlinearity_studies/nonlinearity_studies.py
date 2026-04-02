@@ -19,74 +19,44 @@ def convert_to_electrons(data, pedestal, gain, flatten=True):
 
 #---------------- (1) Calculate noise/gain ----------------------
 # Function finds noise and gain from input pixel charge data
-# Uses the two largest peaks in the data (zero and one electron peaks)
-def calculate_noise_gain(data, n=200, fit_bounds='default'):
+# zero_one_range is range of charge (in ADU) we want to restrict to for finding the zero and one electron peaks
+def calculate_noise_gain(data, zero_one_test_range=[8,15], n=200, fit_bounds='default'):
 
     data = np.array(data).flatten()
-    
-    # Create histogram of data up to max=100 to find peaks (zero and one electron peaks)
-    # This avoids detecting spurious peaks at high charge values
-    hist_max = 100
-    hist_range = (np.min(data), hist_max)
-    nbins = int(n * (hist_max - np.min(data)))
-    counts, edges = np.histogram(data, bins=nbins, range=hist_range)
-    centers = 0.5 * (edges[:-1] + edges[1:])
-    
-    # Find the two largest peaks
-    peaks, properties = scipy_find_peaks(counts, height=0)
-    
-    if len(peaks) < 2:
-        raise ValueError("Did not find two distinct peaks in the data")
-    
-    # Get indices of the two peaks with highest counts
-    peak_heights = counts[peaks]
-    top_two_indices = np.argsort(peak_heights)[-2:]
-    top_two_peaks = peaks[top_two_indices]
-    
-    # Sort by position (not by height) - first peak is zero electrons, second is one electron
-    top_two_peaks = np.sort(top_two_peaks)
-    
-    zero_peak_index = top_two_peaks[0]
-    one_peak_index = top_two_peaks[1]
-    
-    zero_peak_charge = centers[zero_peak_index]
-    one_peak_charge = centers[one_peak_index]
-    
-    # Define range around both peaks for fitting
-    # Use a window that includes both peaks with some margin
-    margin = (one_peak_charge - zero_peak_charge) * 0.5
-    fit_left = zero_peak_charge - margin
-    fit_right = one_peak_charge + margin
-    fit_range = [fit_left, fit_right]
-    
-    # Create histogram for the fitting range
-    fit_nbins = int(n * (fit_right - fit_left))
-    fit_counts, fit_edges = np.histogram(data, bins=fit_nbins, range=fit_range)
-    fit_centers = 0.5 * (fit_edges[:-1] + fit_edges[1:])
-    
-    # Set tight fit bounds around the detected peak positions
+    data_test_range = data[(data > zero_one_test_range[0]) & (data < zero_one_test_range[1])]
+
+    nbins=min(2000, int(n*(zero_one_test_range[1]-zero_one_test_range[0])))
+    counts_test, edges_test = np.histogram(data_test_range,bins=nbins,
+                                           range=(zero_one_test_range[0],zero_one_test_range[1]))
+
+    # Find index of maximum of counts, which corresponds to the mean ADU of the zero electron peak
+    zero_peak_index = np.argmax(counts_test)
+    centers_test = 0.5 * (edges_test[:-1] + edges_test[1:])
+    zero_peak_charge = centers_test[zero_peak_index]
+
+    # Restrict data range to only include the zero and one electron peaks
+    # Nominal gain is around 1.3 and noise less than 1 electron 
+    zero_one_left = zero_peak_charge - 1
+    zero_one_right = zero_peak_charge + 2
+    zero_one_range = [zero_one_left, zero_one_right]
+    data_window = data[(data > zero_one_left) & (data < zero_one_right)]
+
+    # Fit double gaussian to range [zero_peak_charge - 1, zero_peak_charge + 2.5]
+    zero_one_counts, zero_one_edges = np.histogram(data_window,bins=nbins,range=zero_one_range)
+    zero_one_centers = 0.5 * (zero_one_edges[:-1] + zero_one_edges[1:])
+
     if fit_bounds == 'default':
-        # Tight bounds around zero peak (mu0)
-        mu0_lower = zero_peak_charge - margin * 0.3
-        mu0_upper = zero_peak_charge + margin * 0.3
+        fit_bounds = ([0.00001, zero_one_left, 0.00001, zero_one_left+1.5, 1, 1], 
+                      [1, zero_one_left+1.5, 1, zero_one_right, max(zero_one_counts), (1e-1)*max(zero_one_counts)])
         
-        # Tight bounds around one peak (mu1)
-        mu1_lower = one_peak_charge - margin * 0.3
-        mu1_upper = one_peak_charge + margin * 0.3
-        
-        fit_bounds = (
-            [0.00001, mu0_lower, 0.00001, mu1_lower, 1, 1],
-            [1, mu0_upper, 1, mu1_upper, max(fit_counts), max(fit_counts)]
-        )
-    
-    popt, pcov = curve_fit(double_gauss, fit_centers, fit_counts, maxfev=20000, bounds=fit_bounds)
+    popt, pcov = curve_fit(double_gauss, zero_one_centers, zero_one_counts, maxfev=20000, bounds=fit_bounds)
     
     # Extract pedestal, noise, gain, and rest of double gaussian coefficients from curve fit
-    pedestal = tuple(popt)[1]  # Pedestal is mean of zero electron peak
-    noise = tuple(popt)[0]  # Noise is standard deviation of zero electron peak
-    gain = tuple(popt)[3] - tuple(popt)[1]  # Gain is difference between mean of one and zero electron peaks
+    pedestal=tuple(popt)[1] # Pedestal is mean of zero electron peak
+    noise=tuple(popt)[0] # Noise is standard deviation of zero electron peak 
+    gain=tuple(popt)[3]-tuple(popt)[1] # Gain is difference between mean of one and zero electron peaks
 
-    return fit_counts, fit_edges, pedestal, noise, gain, popt, fit_range
+    return zero_one_counts, zero_one_edges, pedestal, noise, gain, popt, zero_one_range
 
 
 #---------------- (2) Find peaks ----------------------------
