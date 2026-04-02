@@ -96,17 +96,17 @@ chmod +x nonlinearity_studies/run_nonlinearity_studies.py
 
 **3. As a console script** (after pip installation):
 ```bash
-run-nonlinearity-studies [OPTIONS] <file_string>
+run_nonlinearity_studies [OPTIONS] <file_string>
 ```
 
 #### Options
 
-- `--stitch-fits`: Stitch multi-extension FITS files before analysis
-- `--plot-zero-one-peaks`: Plot zero and one electron peaks
-- `--plot-all-peaks`: Plot all identified peaks
-- `--get-nonlinearity-at CHARGE`: Calculate nonlinearity at specific charge values
-- `--plot-nonlinearity`: Plot nonlinearity curve
-- `--save-plots`: Save generated plots to disk
+- `--stitch_fits`: Stitch multi-extension FITS files before analysis
+- `--plot_zero-one-peaks`: Plot zero and one electron peaks
+- `--plot_all_peaks`: Plot all identified peaks
+- `--get_nonlinearity_at CHARGES`: Calculate nonlinearity at specific charge values
+- `--plot_nonlinearity`: Plot nonlinearity curve
+- `--save_plots`: Save generated plots to disk
 
 ## Examples
 
