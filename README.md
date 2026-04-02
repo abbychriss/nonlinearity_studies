@@ -24,7 +24,7 @@ This package provides tools to:
 
 ### Clone the repository
 
-Navigate to directory you want to store project in.
+Navigate to project directory then run:
 ```bash
 mkdir nonlinearity_studies
 git clone https://github.com/abbychriss/nonlinearity_studies.git
