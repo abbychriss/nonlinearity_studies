@@ -112,11 +112,12 @@ run-nonlinearity-studies [OPTIONS] <file_string>
 
 Let's stitch 10 images together from examples/images/ten-images folder and run the nonlinearity analysis script on these images. Navigate to project directory in terminal and run:
 ```bash
-./nonlinearity_studies/run_nonlinearity_studies \
-    --stitch-fits "examples/images/ten-images/*" \
+./nonlinearity_studies/run_nonlinearity_studies.py \
+    "examples/images/ten-images/*"
+    --stitch-fits \
     --plot-zero-one-peaks \
     --plot-nonlinearity \
-    --save-plots \
+    --save-plots
 ```
 
 ## Core Functions

@@ -9,6 +9,10 @@ This script provides functionality to:
 - Calculate and visualize nonlinearity
 
 Usage:
+As executable:
+    ./nonlinearity_studies/run_nonlinearity_studies.py [OPTIONS] <file_path>
+
+As module:
     python -m nonlinearity_studies.run_nonlinearity_studies [OPTIONS] <file_path>
     
 Or after pip installation:
@@ -18,21 +22,36 @@ Or after pip installation:
 import numpy as np
 import argparse
 from pathlib import Path
+import sys
 
-# Import stitch_fits from local package
-from .stitch_fits import stitch_fits
-
-# Import main functions from nonlinearity module
-from .nonlinearity_studies import (
-    get_fits, 
-    get_zero_one_peaks_ext, 
-    get_all_peaks_ext, 
-    get_nonlinearity_ext, 
-    get_nonlinearity_at_ext,
-    plot_zero_one_peaks, 
-    plot_all_peaks, 
-    plot_nonlinearity
-)
+# Handle imports for both direct execution and module import
+if __name__ == "__main__":
+    # When run as script, add parent directory to path
+    sys.path.insert(0, str(Path(__file__).parent))
+    from stitch_fits import stitch_fits
+    from nonlinearity_studies import (
+        get_fits, 
+        get_zero_one_peaks_ext, 
+        get_all_peaks_ext, 
+        get_nonlinearity_ext, 
+        get_nonlinearity_at_ext,
+        plot_zero_one_peaks, 
+        plot_all_peaks, 
+        plot_nonlinearity
+    )
+else:
+    # When imported as module, use relative imports
+    from .stitch_fits import stitch_fits
+    from .nonlinearity_studies import (
+        get_fits, 
+        get_zero_one_peaks_ext, 
+        get_all_peaks_ext, 
+        get_nonlinearity_ext, 
+        get_nonlinearity_at_ext,
+        plot_zero_one_peaks, 
+        plot_all_peaks, 
+        plot_nonlinearity
+    )
 
 def main(args=None):
     """
@@ -224,6 +243,4 @@ You can enable any combination of steps using flags below.""",
 
 if __name__ == '__main__':
     args = init_argparse()
-    main(args)
-
     main(args)
