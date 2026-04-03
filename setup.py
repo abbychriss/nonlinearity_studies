@@ -18,6 +18,9 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Intended Audience :: Science/Research",
@@ -25,10 +28,10 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        "numpy>=1.19.0",
-        "matplotlib>=3.3.0",
-        "scipy>=1.5.0",
-        "astropy>=4.0",
+        "numpy>=1.26.0",
+        "matplotlib>=3.8.0",
+        "scipy>=1.11.0",
+        "astropy>=5.3",
     ],
     entry_points={
         "console_scripts": [

@@ -22,7 +22,16 @@ cd nonlinearity_studies
 
 ### Install package 
 
-#### Development mode
+#### Using Conda environment.yml
+
+The recommended way to install is to use the `environment.yml` file to create a conda environment called `nonlinearity-studies` configured with the right version of Python and required dependencies. It also pip installs the nonlinearity_studies package in development mode. To set up environment, run:
+
+```bash
+conda env create -f environment.yml
+conda activate nonlinearity-studies
+```
+
+#### Direct pip install in development mode
 
 Install package in development mode (the -e flag makes files editable):
 
@@ -31,19 +40,19 @@ cd nonlinearity_studies
 pip install -e .
 ```
 
-#### OR regular installation
+####  regular installation
 
 ```bash
 pip install .
 ```
 
-### Requirements
+### Requirements for direct pip installation
 
 - Python >= 3.8
-- numpy >= 1.19.0
-- matplotlib >= 3.3.0
-- scipy >= 1.5.0
-- astropy >= 4.0
+- numpy >= 1.26.0
+- matplotlib >= 3.8.0
+- scipy >= 1.11.0
+- astropy >= 5.3
 
 ## Usage
 
@@ -79,15 +88,16 @@ There are three ways to run the analysis:
 python -m nonlinearity_studies.run_nonlinearity_studies [OPTIONS] <file_string>
 ```
 
-**2. As a direct executable** (requires executable permissions - should be activated automatically but if not run ):
+**2. As a direct executable** (requires executable permissions - should be activated automatically but if not run `chmod +x nonlinearity_studies/run_nonlinearity_studies.py`):
+
 ```bash
-chmod +x nonlinearity_studies/run_nonlinearity_studies.py
 ./nonlinearity_studies/run_nonlinearity_studies.py [OPTIONS] <file_string>
 ```
 
 **3. As a console script** (after pip installation):
+
 ```bash
-run_nonlinearity_studies [OPTIONS] <file_string>
+run-nonlinearity-studies [OPTIONS] <file_string>
 ```
 
 #### Options
@@ -101,45 +111,54 @@ run_nonlinearity_studies [OPTIONS] <file_string>
 
 ## Examples
 
-First let's stitch 10 images together from examples/images/ten-images folder and run the analysis script on these images. Navigate to project directory in terminal and run:
+For the first example, we will fit the zero and one electron peaks for a single 250x3500 image with 1x1 binning and 500 skips. Run:
+
 ```bash
-./nonlinearity_studies/run_nonlinearity_studies.py \
+run-nonlinearity-studies \
+    "examples/images/ten-images/avg_img_CV_250x3500x500_bin1x1_125_20260317_213403_0.fz" \
+    --plot_zero_one_peaks \
+```
+
+Next, let's stitch 10 images together from examples/images/ten-images folder and run the analysis script on these
+ images. Navigate to project directory in terminal and run:
+
+```bash
+run-nonlinearity-studies \
     "examples/images/ten-images/*" \
     --stitch_fits \
     --plot_zero_one_peaks \
-    --plot_all_peaks \
     --plot_nonlinearity \
-    --save_plots
 ```
   
-Now every time we want to analyze the stitched image again, we can pass the stitched image directly into the script instead of restitching and overwriting the stitched image, as follows:
+Now every time we want to analyze the stitched image again, we can pass the stitched image directly into the script and remove the --stitch_fits flag, instead of restitching and overwriting the stitched image. Run the stitched image and save the plots:
+
 ```bash
-./nonlinearity_studies/run_nonlinearity_studies.py \
+run-nonlinearity-studies \
     "examples/images/combined-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
     --plot_zero_one-peaks \
     --plot_nonlinearity \
     --save_plots
 ```
-where the key change was removing the --stitch-fits flag.
 
 If we want to just get the nonlinearity at specific charge values we can run
+
 ```bash
-./nonlinearity_studies/run_nonlinearity_studies.py \
+run-nonlinearity-studies \
     "examples/images/combined-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
     --get_nonlinearity_at 10 50 500 1000
 ```
 
-## Core Functions
+## Functions
 
 ### Analysis Functions
 
 - `convert_to_electrons(data, pedestal, gain, flatten=True)`: Convert ADU values to electron counts
-- `calculate_noise_gain(data, zero_one_test_range=[8,15], n=200, fit_bounds='default')`: Determine noise and gain from charge data
+- `calculate_noise_gain(data, zero_one_test_range=[8,15], n=200, fit_bounds='default')`: Determine noise and gain from charge data (single file)
 - `get_fits(file_path)`: Load FITS file data
-- `get_zero_one_peaks_ext(data, extension=None)`: Identify zero and one electron peaks
-- `get_all_peaks_ext(data, extension=None)`: Identify all charge peaks
-- `get_nonlinearity_ext(data, extension=None)`: Calculate nonlinearity across charge range
-- `get_nonlinearity_at_ext(data, charge_values, extension=None)`: Calculate nonlinearity at specific charges
+- `get_zero_one_peaks_ext(data, extension=None)`: Identify zero and one electron peaks for all extensions
+- `get_all_peaks_ext(data, extension=None)`: Find all electron peaks for everu extension
+- `get_nonlinearity_ext(data, extension=None)`: Calculate nonlinearity curve for all extensions
+- `get_nonlinearity_at_ext(data, charge_values, extension=None)`: Calculate nonlinearity at specific charges for all extensions
 
 ### Plotting Functions
 
@@ -147,16 +166,9 @@ If we want to just get the nonlinearity at specific charge values we can run
 - `plot_all_peaks(data, **kwargs)`: Visualize all identified peaks
 - `plot_nonlinearity(data, **kwargs)`: Plot nonlinearity curve
 
+### Utility
 
-## Dependencies
-
-This package requires:
-- **numpy** >= 1.19.0
-- **matplotlib** >= 3.3.0
-- **scipy** >= 1.5.0
-- **astropy** >= 4.0
-
-The `stitch_fits` utility is included in the package for stitching multi-extension FITS files.
+- `stitch_fits`(file_path, **kwargs): stitching multiple FITS files across each extension. Data be same shape.
 
 ## Structure
 
@@ -169,6 +181,7 @@ nonlinearity_studies/
     ├── stitch_fits.py               # FITS image stitching utility
     └── run_nonlinearity_studies.py  # Command-line interface
 ├── setup.py                         # Package configuration
+├── environment.yml                  # Conda environment configuration file
 ├── .gitignore                       # File telling git which files not to track
 └── README.md                        # This file
 ```
