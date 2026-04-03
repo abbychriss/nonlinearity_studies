@@ -162,7 +162,7 @@ def main(args=None):
 
     # Fit zeroth and first electron peaks to double gaussians
     zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, \
-    double_gauss_popts, zero_one_ranges = get_zero_one_peaks_ext(data_ext, fit_bounds='default')
+    double_gauss_popts, zero_one_ranges = get_zero_one_peaks_ext(data_ext, n=100, fit_bounds='default')
 
     # Apply scipy peak finder to find location of every electron peak
     counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges = get_all_peaks_ext(data_ext, 
@@ -210,7 +210,7 @@ def main(args=None):
                             #ylim=(0.00001,2e5),
                             yscale='linear',
                             fontsize=8,
-                            n=200, 
+                            n=100, 
                             do_convert_to_electrons=True,
                             plot_individual=False,
                             plot_together=True,
