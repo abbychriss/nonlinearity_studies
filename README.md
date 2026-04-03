@@ -111,7 +111,7 @@ run-nonlinearity-studies [OPTIONS] <file_string>
 
 ## Examples
 
-For the first example, we will fit the zero and one electron peaks for a single 250x3500 image with 1x1 binning and 500 skips. Run:
+For the first example, we will fit the zero and one electron peaks for a single 250x3500 image with 1x1 binning and 500 skips. Navigate to project directory in terminal and run:
 
 ```bash
 run-nonlinearity-studies \
@@ -120,7 +120,7 @@ run-nonlinearity-studies \
 ```
 
 Next, let's stitch 10 images together from examples/images/ten-images folder and run the analysis script on these
- images. Navigate to project directory in terminal and run:
+ images:
 
 ```bash
 run-nonlinearity-studies \
