@@ -104,60 +104,67 @@ def main(args=None):
                     file_path = search_path
                     break
 
+    # Get values from argparse arguments
     do_stitch_images = args.stitch_fits
-    do_plot_zero_one_peaks = args.plot_zero_one_peaks
+    do_plot_zero_one_peaks = args.plot_zero_one
     do_plot_all_peaks = args.plot_all_peaks
     get_nonlinearity_at_charges = args.get_nonlinearity_at
+
     # Unpack single value from list for cleaner interface
     if get_nonlinearity_at_charges is not None and len(get_nonlinearity_at_charges) == 1:
         get_nonlinearity_at_charges = get_nonlinearity_at_charges[0]
+
     do_get_nonlinearity_at = get_nonlinearity_at_charges is not None
     do_plot_nonlinearity = args.plot_nonlinearity
     save_plots = args.save_plots
+    output_dir = args.output_dir
+    verbose = args.verbose
+
+    stitched_dir_name = 'stitched-fits'
 
     if do_stitch_images:
-        # Split input path to get directory and image pattern
-        image_dir, image_pattern = _derive_data_path(args.file_string)
-        
-        # Check if path already contains 'combined-fits'
-        if 'combined-fits' in image_dir.parts:
-            # If combined-fits is already in the path, find its parent as data_path
-            combined_fits_idx = image_dir.parts.index('combined-fits')
-            data_path = Path(*image_dir.parts[:combined_fits_idx])
-            # Don't need to stitch - files are already there
-            image_name = next(Path(image_dir).glob(image_pattern)).name
-        else:
-            # Raw images case - stitch them
-            data_path = image_dir.parent
-            stitched_file = stitch_fits(data_path, directory=image_dir.name, image=image_pattern, 
-                                         out_path='combined-fits/', print_header=False)
-            image_name = Path(stitched_file).name
-    else:
-        file_path = Path(args.file_string)
-        
-        # Check if path contains 'combined-fits' to find the base data_path
-        if 'combined-fits' in file_path.parts:
-            combined_fits_idx = file_path.parts.index('combined-fits')
-            data_path = Path(*file_path.parts[:combined_fits_idx])
-        else:
-            data_path = file_path.parent
-        
-        image_name = file_path.name
+        input_dir, input_pattern = _derive_data_path(args.file_string)
 
-    # Derive fig_path from data_path
-    fig_path = data_path.parent / 'plots'
-    fig_path.mkdir(parents=True, exist_ok=True)
-    
-    print(f'Analyzing image: {image_name}')
-    
-    # Get data from fits file
-    if do_stitch_images:
-        # In stitch mode, files are in combined-fits subdirectory
-        fits_path = str(data_path / 'combined-fits' / image_name)
+        if stitched_dir_name in input_dir.parts:
+            fits_file_path = next(input_dir.glob(input_pattern), None)
+            if fits_file_path is None:
+                print('\nError: no files found matching the specified stitched FITS pattern.')
+                sys.exit(1)
+        else:
+            stitched_file = stitch_fits(
+                input_dir.parent,
+                directory=input_dir.name,
+                image=input_pattern,
+                out_path=Path(input_dir.name) / stitched_dir_name,
+                print_header=verbose,
+            )
+            if stitched_file is None:
+                sys.exit(1)
+            fits_file_path = Path(stitched_file)
     else:
-        # In non-stitch mode, use the input path directly
-        fits_path = args.file_string
+        fits_file_path = file_path
+
+    if stitched_dir_name in fits_file_path.parts:
+        stitched_fits_idx = fits_file_path.parts.index(stitched_dir_name)
+        base_path = Path(*fits_file_path.parts[:stitched_fits_idx])
+        default_fig_path = base_path / 'plots'
+    else:
+        default_fig_path = fits_file_path / 'plots'
+
+    if output_dir is not None:
+        fig_path = Path(output_dir)
+    else:
+        fig_path = default_fig_path
+
+    if save_plots:
+        fig_path.mkdir(parents=True, exist_ok=True)
+
+    image_name = fits_file_path.name
+
+    fits_path = str(fits_file_path)
+    print(f'Analyzing image: {fits_path}\n')
     
+    # Load data from FITS file
     data_ext = get_fits(fits_path)
 
     # Fit zeroth and first electron peaks to double gaussians
@@ -176,24 +183,24 @@ def main(args=None):
                                                                                 do_convert_to_electrons=True, 
                                                                                 range_left='default', 
                                                                                 range_right=2500, 
-                                                                                bin_factor=8)
+                                                                                bin_factor=8,
+                                                                                print_values=verbose)
 
     # Fit parabola to nonlinearity curve
-    fit_range_right_ext= [600,800,500,1000]
+    fit_range_right_ext= [400,600,500,700]
 
-    peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs, parabola_pcovs, nonlinearity_at_500 = get_nonlinearity_ext(peaks_ext,
-                                                                                                                           centers_ext, 
-                                                                                                                           pedestals, 
-                                                                                                                           gains, 
-                                                                                                                           fit_range_right_ext, 
-                                                                                                                           do_convert_to_electrons=False,
-                                                                                                                           fit_bounds_low=-100, 
-                                                                                                                           fit_bounds_high=100,
-                                                                                                                           print_values=True)
+    peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs, parabola_pcovs, = get_nonlinearity_ext(peaks_ext,
+                                                                                                        centers_ext, 
+                                                                                                        pedestals, 
+                                                                                                        gains, 
+                                                                                                        fit_range_right_ext, 
+                                                                                                        do_convert_to_electrons=False,
+                                                                                                        fit_bounds_low=-100, 
+                                                                                                        fit_bounds_high=100)
 
     # Get nonlinearity at specified charge value(s)
     if do_get_nonlinearity_at:
-        get_nonlinearity_at_ext(get_nonlinearity_at_charges, parabola_coeffs, parabola_pcovs, fit_range_right_ext, print_values=True)
+        get_nonlinearity_at_ext(get_nonlinearity_at_charges, parabola_coeffs, parabola_pcovs, fit_range_right_ext)
 
     # Fit a double gaussian to zero + 1 electron peak in each extension
     if do_plot_zero_one_peaks:
@@ -252,7 +259,7 @@ def main(args=None):
                         ylim='default',
                         individual_figsize=(6,5), 
                         subplots_figsize=(9,7),
-                        suptitle='Pixel Charge Nonlinearity Curve (Nimages = 10)',
+                        suptitle='Pixel Charge Nonlinearity Curve (Nimages = {})'.format(args.nimages),
                         line_color='r', 
                         scatter_color='b', 
                         s=2, 
@@ -283,10 +290,10 @@ You can enable any combination of steps using flags below.""",
     )
 
     parser.add_argument('file_string', type=str, 
-                       help='Absolute or relative path to image file (.fz or .fits accepted)')
+                       help='Absolute or relative path to image file (.fz or .fits accepted) if not stitching (ex: data/avg_img.fz), or to directory with images if stitching (can include glob pattern like "*", ex: data/03-12-2026/avg*.fz or data/*)')
     parser.add_argument("-f", "--stitch_fits", action="store_true", default=False, 
                        help="Stitch FITS files by extension")
-    parser.add_argument("-z", "--plot_zero_one_peaks", action="store_true", default=False, 
+    parser.add_argument("-z", "--plot_zero_one", action="store_true", default=False, 
                        help="Plot fits to zero/one electron peaks")
     parser.add_argument("-a", "--plot_all_peaks", action="store_true", default=False, 
                        help="Plot entire charge distribution with line at each peak")
@@ -296,6 +303,12 @@ You can enable any combination of steps using flags below.""",
                        help="Plot nonlinearity curve with quadratic fit")
     parser.add_argument("-s", "--save_plots", action="store_true", default=False, 
                        help="Save all plots as jpeg images")
+    parser.add_argument("-o", "--output_dir", type=str, default=None, 
+                       help="Directory to save all plots")
+    parser.add_argument("-v", "--verbose", action="store_true", default=False, 
+                       help="Print verbose output")
+    parser.add_argument("--nimages", type=int, default=10, 
+                       help="Number of stitched images (used for labeling plots)")
 
     args = parser.parse_args()
 
