@@ -101,8 +101,6 @@ def find_all_peaks(data,
     centers = 0.5 * (edges[1:] + edges[:-1])
     peaks, properties = scipy_find_peaks(counts, height=0, width=width, distance=bin_factor-buffer)
 
-    print(f'Width = {width}, buffer = {buffer}, bin factor = {bin_factor} used for peak finder')
-
     return counts, edges, peaks, centers, properties, hist_range
 
 
@@ -127,10 +125,12 @@ def fit_nonlinearity(peaks, centers, pedestal, gain, fit_range_right, do_convert
 # at a single value or list of values
 # required arguments: q (charge value that parabola equation is evaluated at, can be int, float or list), parabola_coeff (the curve_fit optimal parabola coefficients found in fit_nonlinearity)
 # optional arguments: parabola_pcov, fit_range_right (used to ascertain how confident we should be in the nonlinearity value); print_values (if you want to print what the function outputs)
-def get_nonlinearity_at(q, parabola_coeff, parabola_pcov=None, fit_range_right=None, print_values=True):
+def get_nonlinearity_at(q, parabola_coeff, parabola_pcov=None, fit_range_right=None, print_values=False):
     a = parabola_coeff[0]
     b = parabola_coeff[1]
     c = parabola_coeff[2]
+
+    print(f'Parabola best fit: nonlinearity(q) = {np.round(a,3)}*q^2 + {np.round(b,3)}*q + {np.round(c,3)}\n')
 
     if type(q)==float or type(q)==int:
         nonlinearity_at_q = a*q**2 + b*q + c
@@ -138,13 +138,17 @@ def get_nonlinearity_at(q, parabola_coeff, parabola_pcov=None, fit_range_right=N
     if type(q)==list:
         nonlinearity_at_q = [(a*q_i**2 + b*q_i + c) for q_i in q]
     
-    if print_values==True:
-        print(f'Interpolated nonlinearity at {q} e- = {nonlinearity_at_q}')
-
-        if fit_range_right!=None:
-            print(f'Parabola fit was performed up to {fit_range_right} e-')
-        if type(parabola_pcov)!=None:
-            print(f'Covariance of fit = {parabola_pcov}')
+        if type(q)==float or type(q)==int:
+            print(f'Interpolated nonlinearity at {q} e- = {nonlinearity_at_q} e-\n')
+        elif type(q)==list:
+            for i in range(len(q)):
+                print(f'Interpolated nonlinearity at {q[i]} e- = {nonlinearity_at_q[i]} e-\n')
+    
+    if print_values:
+        if fit_range_right is not None:
+            print(f'Parabola fit was performed up to {fit_range_right} e-\n')
+        if parabola_pcov is not None:
+            print(f'Covariance of fit = {parabola_pcov}\n')
 
     return nonlinearity_at_q
 
@@ -257,7 +261,7 @@ def plot_zero_one_peaks(data_ext,
             
                 double_gauss_popt_e, double_gauss_pcov_e = curve_fit(double_gauss, zero_one_centers_e, zero_one_counts_e, maxfev=2000, 
                                                                      bounds=([0.0001, -1, 0.0001, 0.5, 0, 0], 
-                                                                             [1.0,  1,  1.0,  2.0, np.inf, np.inf]))
+                                                                             [1.0,  1,  1.0,  1.1, max(zero_one_counts_e), max(zero_one_counts_e)]))
                 
                 if yscale=='log':
                     zero_one_counts_e = np.maximum(zero_one_counts_e, 1) #need in order to prevent empty bars in histogram if there are any bins that have 0 counts
@@ -364,7 +368,7 @@ def plot_zero_one_peaks(data_ext,
                 bin_width_e = zero_one_edges_e[1] - zero_one_edges_e[0]
                 
                 double_gauss_popt_e, double_gauss_pcov_e = curve_fit(double_gauss, zero_one_centers_e, zero_one_counts_e, maxfev=2000, bounds=([0.0, -1, 0.0, 0.5, 0.0, 0.0], 
-                                                                                                                                               [1.0,  1,  1.0,  2.0, 1e7, 1e7]))
+                                                                                                                                               [1.0,  1,  0.5,  1.1, max(zero_one_counts_e), max(zero_one_counts_e)]))
                 
                 if yscale=='log':
                     zero_one_counts_e = np.maximum(zero_one_counts_e, 1) #need in order to prevent empty bars in histogram if there are any bins that have 0 counts
@@ -632,7 +636,7 @@ def get_fits(file_input):
 
 
 #---------------- Return data for each extensions in a list from pixel charge data for all extensions
-def get_zero_one_peaks_ext(data_ext, fit_bounds='default'):
+def get_zero_one_peaks_ext(data_ext, n=200, fit_bounds='default'):
     zero_one_counts_ext = []
     zero_one_edges_ext = []
     pedestals = []
@@ -642,7 +646,7 @@ def get_zero_one_peaks_ext(data_ext, fit_bounds='default'):
     for data in data_ext:
         data=np.array(data).flatten()
 
-        zero_one_counts, zero_one_edges, pedestal, noise, gain, double_gauss_popt, zero_one_range = calculate_noise_gain(data, fit_bounds=fit_bounds)
+        zero_one_counts, zero_one_edges, pedestal, noise, gain, double_gauss_popt, zero_one_range = calculate_noise_gain(data, n=n, fit_bounds=fit_bounds)
         zero_one_counts_ext.append(zero_one_counts)
         zero_one_edges_ext.append(zero_one_edges)
         pedestals.append(pedestal)
@@ -653,12 +657,20 @@ def get_zero_one_peaks_ext(data_ext, fit_bounds='default'):
     return zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges
         
 
-def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, bins='default', flatten=True, do_convert_to_electrons=True, range_left='default', range_right=2000, bin_factor=8):
+def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, bins='default', flatten=True, do_convert_to_electrons=True, range_left='default', range_right=2000, bin_factor=8, print_values=False):
     counts_ext = []
     edges_ext = []
     peaks_ext = []
     centers_ext = []
     hist_ranges = []
+
+    if print_values:
+        print('\nFinding peaks for each extension with the following parameters:\n')
+        print(f'Widths: {widths}')
+        print(f'Buffers: {buffers}')
+        print(f'Pedestals: {pedestals}')
+        print(f'Gains: {gains}')
+
     for ext, data in enumerate(data_ext):
         width = widths[ext]
         buffer = buffers[ext]
@@ -666,7 +678,6 @@ def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, 
         noise = double_gauss_popts[ext][0]
         gain = gains[ext]
 
-        print(f'\nEXT {ext}:')
         counts, edges, peaks, centers, properties, hist_range = find_all_peaks(data, 
                                                                                width, 
                                                                                buffer, 
@@ -685,10 +696,12 @@ def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, 
         peaks_ext.append(peaks)
         centers_ext.append(centers)
         hist_ranges.append(hist_range)
-
+    if print_values:
+        print('***********************************************************')
+    
     return counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges
 
-def get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_right_ext, do_convert_to_electrons=False, fit_bounds_low=-100, fit_bounds_high=100, print_values=True):
+def get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_right_ext, do_convert_to_electrons=False, fit_bounds_low=-100, fit_bounds_high=100):
     
     peak_charge_e_ext = []
     charge_minus_npeak_ext = []
@@ -711,26 +724,24 @@ def get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_rig
                                                                              fit_bounds_low, 
                                                                              fit_bounds_high)
         
-        print(f'\nEXT {ext}:')
-        nonlinearity_at_500 = get_nonlinearity_at(500, parabola_coeff, parabola_pcov, fit_range_right, print_values)
-
         peak_charge_e_ext.append(peak_charge_e)
         charge_minus_npeak_ext.append(charge_minus_npeak)
         parabola_coeffs.append(parabola_coeff)
         parabola_pcovs.append(parabola_pcov)
     print('\n')
 
-    return peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs, parabola_pcovs, nonlinearity_at_500
+    return peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs, parabola_pcovs
 
-def get_nonlinearity_at_ext(q, parabola_coeffs, parabola_pcovs, fit_range_right_ext, print_values=True):
+def get_nonlinearity_at_ext(q, parabola_coeffs, parabola_pcovs, fit_range_right_ext):
     
     nonlinearity_at_q_ext = []
     for ext, parabola_coeff in enumerate(parabola_coeffs):
+        print('\n***********************************************************')
+        print(f'\nEXT {ext}:\n')
         parabola_pcov = parabola_pcovs[ext]
         fit_range_right = fit_range_right_ext[ext]
-        nonlinearity_at_q = get_nonlinearity_at(q, parabola_coeff, parabola_pcov, fit_range_right, print_values=print_values)
+        nonlinearity_at_q = get_nonlinearity_at(q, parabola_coeff, parabola_pcov, fit_range_right)
         nonlinearity_at_q_ext.append(nonlinearity_at_q)
-
     return nonlinearity_at_q_ext
 
 #---------------- Curves ----------------------------

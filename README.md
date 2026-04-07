@@ -102,12 +102,15 @@ run-nonlinearity-studies [OPTIONS] <file_string>
 
 #### Options
 
-- `--stitch_fits`: Stitch multi-extension FITS files before analysis
-- `--plot_zero-one-peaks`: Plot zero and one electron peaks
-- `--plot_all_peaks`: Plot all identified peaks
-- `--get_nonlinearity_at CHARGES`: Calculate nonlinearity at specific charge values
-- `--plot_nonlinearity`: Plot nonlinearity curve
-- `--save_plots`: Save generated plots to disk
+- `-f`, `--stitch_fits`: Stitch multi-extension FITS files before analysis
+- `-z`, `--plot_zero_one`: Plot zero and one electron peaks
+- `-a`, `--plot_all_peaks`: Plot all identified peaks
+- `-g`, `--get_nonlinearity_at CHARGES`: Calculate nonlinearity at specific charge values
+- `-n`, `--plot_nonlinearity`: Plot nonlinearity curve
+- `-s`, `--save_plots`: Save generated plots to local computer
+- `-o`, `--output_dir`: (Optional) output directory for saved plots
+- `-v`, `--verbose`: Print verbose output
+- `--nimages N`: Number of stitched images (used for plot labeling)
 
 ## Examples
 
@@ -116,7 +119,7 @@ For the first example, we will fit the zero and one electron peaks for a single 
 ```bash
 run-nonlinearity-studies \
     "examples/images/ten-images/avg_img_CV_250x3500x500_bin1x1_125_20260317_213403_0.fz" \
-    --plot_zero_one_peaks \
+    --plot_zero_one \
 ```
 
 Next, let's stitch 10 images together from examples/images/ten-images folder and run the analysis script on these
@@ -126,7 +129,7 @@ Next, let's stitch 10 images together from examples/images/ten-images folder and
 run-nonlinearity-studies \
     "examples/images/ten-images/*" \
     --stitch_fits \
-    --plot_zero_one_peaks \
+    --plot_zero_one \
     --plot_nonlinearity \
 ```
   
@@ -135,7 +138,7 @@ Now every time we want to analyze the stitched image again, we can pass the stit
 ```bash
 run-nonlinearity-studies \
     "examples/images/combined-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
-    --plot_zero_one-peaks \
+    --plot_zero_one \
     --plot_nonlinearity \
     --save_plots
 ```
