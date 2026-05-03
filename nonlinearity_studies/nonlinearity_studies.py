@@ -130,19 +130,19 @@ def get_nonlinearity_at(q, parabola_coeff, parabola_pcov=None, fit_range_right=N
     b = parabola_coeff[1]
     c = parabola_coeff[2]
 
-    print(f'Parabola best fit: nonlinearity(q) = {np.round(a,3)}*q^2 + {np.round(b,3)}*q + {np.round(c,3)}\n')
+    print(f'Parabola best fit: Nonlin(q) = {np.round(a,3)}*q^2 + {np.round(b,3)}*q + {np.round(c,3)}\n')
 
     if type(q)==float or type(q)==int:
-        nonlinearity_at_q = a*q**2 + b*q + c
+        nonlinearity_at_q = np.round(a*q**2 + b*q + c,3)
     
     if type(q)==list:
-        nonlinearity_at_q = [(a*q_i**2 + b*q_i + c) for q_i in q]
+        nonlinearity_at_q = [np.round((a*q_i**2 + b*q_i + c),3) for q_i in q]
     
-        if type(q)==float or type(q)==int:
-            print(f'Interpolated nonlinearity at {q} e- = {nonlinearity_at_q} e-\n')
-        elif type(q)==list:
-            for i in range(len(q)):
-                print(f'Interpolated nonlinearity at {q[i]} e- = {nonlinearity_at_q[i]} e-\n')
+    if type(q)==float or type(q)==int:
+        print(f'Interpolated nonlinearity at {q} e- = {nonlinearity_at_q} e-\n')
+    elif type(q)==list:
+        for i in range(len(q)):
+            print(f'Interpolated nonlinearity at {q[i]} e- = {nonlinearity_at_q[i]} e-\n')
     
     if print_values:
         if fit_range_right is not None:
@@ -168,7 +168,11 @@ def plot_zero_one_peaks(data_ext,
                         zero_one_ranges,
                         individual_figsize=(6,5), 
                         subplots_figsize=(9,7),
-                        xlim='default', ylim='none',
+                        xlim='default',
+                        ylim='none',
+                        suptitle='Double-Gaussian Fit to Zero and One Electron Peaks',
+                        additional_title='',
+                        nimages=10,
                         fontsize=7.5,
                         yscale='linear',
                         n=200, 
@@ -198,7 +202,10 @@ def plot_zero_one_peaks(data_ext,
             zero_one_range=zero_one_ranges[ext]
 
             fig, ax = plt.subplots(1, 1, figsize=individual_figsize, constrained_layout=True)
-            fig.suptitle('Double-Gaussian Fit to Zero and One Electron Peaks in ADU')
+            fig.suptitle(f'{additional_title}{suptitle} in ADU (Nimages = {nimages})')
+            ax.set_xlabel('Charge (ADU)')
+            ax.set_ylabel('N')
+            ax.set_title(f'EXT {ext}')
 
             double_gauss_coeff = tuple(double_gauss_popt)+(gain,)
             data_window = data[(data > zero_one_range[0]) & (data < zero_one_range[1])]
@@ -213,10 +220,6 @@ def plot_zero_one_peaks(data_ext,
             elif yscale!='linear':
                 ax.set_yscale(yscale)
             ax.bar(zero_one_edges[:-1], zero_one_counts, edgecolor='none', linewidth=0, align='edge', width=np.diff(zero_one_edges))
-
-            ax.set_xlabel('Charge (ADU)')
-            ax.set_ylabel('N')
-            ax.set_title(f'EXT {ext}')
             
             ax.plot(zero_one_centers, double_gauss(zero_one_centers, *double_gauss_popt), 'r',
                 label=r'$\sigma_0$ = %5.3f, $\mu_0$ = %5.3f, $\sigma_1$ = %5.3f, $\mu_1$ = %5.3f,'%double_gauss_coeff[0:4]
@@ -239,7 +242,7 @@ def plot_zero_one_peaks(data_ext,
 
         if do_convert_to_electrons:
             fig, axs = plt.subplots(2, 2, figsize=individual_figsize, constrained_layout=True)
-            fig.suptitle(r'Double-Gaussian Fit to Zero and One Electron Peaks in $e^-$')
+            fig.suptitle(rf'{additional_title}{suptitle} in $e^-$ (Nimages = {nimages})')
             axs = axs.flatten()
             
             for ext, data in enumerate(data_ext):
@@ -295,7 +298,7 @@ def plot_zero_one_peaks(data_ext,
     if plot_together:
 
         fig, axs = plt.subplots(2, 2, figsize=subplots_figsize, constrained_layout=True)
-        fig.suptitle('Double-Gaussian Fit to Zero and One Electron Peaks in ADU')
+        fig.suptitle(f'{additional_title}{suptitle} in ADU (Nimages = {nimages})')
         axs = axs.flatten()
 
         for ext, data in enumerate(data_ext):
@@ -347,7 +350,7 @@ def plot_zero_one_peaks(data_ext,
 
         if do_convert_to_electrons:
             fig, axs = plt.subplots(2, 2, figsize=subplots_figsize, constrained_layout=True)
-            fig.suptitle(r'Double-Gaussian Fit to Zero and One Electron Peaks in $e^-$')
+            fig.suptitle(rf'{additional_title}{suptitle} in $e^-$ (Nimages = {nimages})')
             axs = axs.flatten()
 
             for ext, data in enumerate(data_ext):
@@ -414,7 +417,9 @@ def plot_all_peaks(counts_ext,
                    plot_individual=True, plot_together=False, 
                    draw_lines=True, linecolor='r', linestyle='--',
                    individual_figsize=(6,5), subplots_figsize=(9,7),
+                   additional_title='',
                    suptitle='Peaks in Pixel Charge Distribution',
+                   nimages=10,
                    save_plots=False,
                    fig_path='./', file='peak_finder', 
                    dpi=350):
@@ -433,7 +438,7 @@ def plot_all_peaks(counts_ext,
             bin_width = centers[1] - centers[0]
             
             fig, ax = plt.subplots(1, 1, figsize=individual_figsize, constrained_layout=True)
-            fig.suptitle(suptitle+f': EXT {ext}')
+            fig.suptitle(f'{additional_title}{suptitle}: EXT {ext}')
             ax.bar(centers, counts, align='center', edgecolor='none', linewidth=0, width=bin_width)
             ax.set_xlabel(r'Charge ($e^-$)')
             ax.set_ylabel('N')
@@ -467,7 +472,7 @@ def plot_all_peaks(counts_ext,
     if plot_together:
         fig, axs = plt.subplots(2,2,figsize=subplots_figsize,constrained_layout=True)
         axs=axs.flatten()
-        fig.suptitle(suptitle)
+        fig.suptitle(f'{additional_title}{suptitle}')
 
         for ext, counts in enumerate(counts_ext):
             peaks=peaks_ext[ext]
@@ -516,7 +521,9 @@ def plot_nonlinearity(peaks_ext,
                       fit_range_right_ext,
                       xlim='default', ylim='default',
                       individual_figsize=(6,5), subplots_figsize=(9,7),
+                      additional_title='',
                       suptitle='Pixel Charge Nonlinearity Curve',
+                      nimages=10,
                       line_color='r', 
                       scatter_color='b', 
                       s=2, 
@@ -534,10 +541,14 @@ def plot_nonlinearity(peaks_ext,
         base_name = file
     fig_name = fig_path / base_name
 
+    if type(fit_range_right_ext) is not list:
+        fit_range_right_ext = [fit_range_right_ext]*len(peaks_ext)
+
     if plot_individual:
         for ext, peaks in enumerate(peaks_ext):
             fig, ax = plt.subplots(1, 1, figsize=individual_figsize, constrained_layout=True)
-            fig.suptitle(suptitle+f': EXT {ext}')
+            fig.suptitle(f'{additional_title}{suptitle} (Nimages = {nimages})')
+            ax.set_title(f'EXT {ext}')
             ax.grid()
 
             parabola_coeff=parabola_coeffs[ext]
@@ -571,7 +582,7 @@ def plot_nonlinearity(peaks_ext,
     if plot_together:
         fig, axs = plt.subplots(2, 2, figsize=subplots_figsize, constrained_layout=True)
         axs=axs.flatten()
-        fig.suptitle(suptitle)
+        fig.suptitle(f'{additional_title}{suptitle} (Nimages = {nimages})')
         for ext, peak_charge_e in enumerate(peak_charge_e_ext):
             ax = axs[ext]
             ax.grid()
@@ -598,11 +609,11 @@ def plot_nonlinearity(peaks_ext,
             elif xlim!='none':
                 ax.set_xlim(xlim)
 
-    if save_plots:
-        output_path = fig_name.with_suffix('.jpeg')
-        plt.savefig(str(output_path), dpi=dpi)
-        print(f'Saved plot to {output_path}')
-    plt.show()
+        if save_plots:
+            output_path = fig_name.with_suffix('.jpeg')
+            plt.savefig(str(output_path), dpi=dpi)
+            print(f'Saved plot to {output_path}')
+        plt.show()
 
 
 #---------------- UTILITY FUNCTIONS ----------------------------
@@ -664,6 +675,11 @@ def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, 
     centers_ext = []
     hist_ranges = []
 
+    if type(widths) is not list:
+        widths = [widths] * len(data_ext)
+    if type(buffers) is not list:
+        buffers = [buffers] * len(data_ext)
+
     if print_values:
         print('\nFinding peaks for each extension with the following parameters:\n')
         print(f'Widths: {widths}')
@@ -708,6 +724,9 @@ def get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_rig
     parabola_coeffs = []
     parabola_pcovs = []
 
+    if type(fit_range_right_ext) is not list:
+        fit_range_right_ext = [fit_range_right_ext]*len(peaks_ext)
+
     for ext, peaks in enumerate(peaks_ext):
 
         centers=centers_ext[ext]
@@ -728,7 +747,6 @@ def get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_rig
         charge_minus_npeak_ext.append(charge_minus_npeak)
         parabola_coeffs.append(parabola_coeff)
         parabola_pcovs.append(parabola_pcov)
-    print('\n')
 
     return peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs, parabola_pcovs
 
