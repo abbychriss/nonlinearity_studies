@@ -113,6 +113,9 @@ def main(args=None):
     # Unpack single value from list for cleaner interface
     if get_nonlinearity_at_charges is not None and len(get_nonlinearity_at_charges) == 1:
         get_nonlinearity_at_charges = get_nonlinearity_at_charges[0]
+    
+    #Get right bound for parabolic fit from argparse (can be single value or list of values for each extension)
+    fit_range_right_ext=args.fit_range_right
 
     do_get_nonlinearity_at = get_nonlinearity_at_charges is not None
     do_plot_nonlinearity = args.plot_nonlinearity
@@ -173,8 +176,8 @@ def main(args=None):
 
     # Apply scipy peak finder to find location of every electron peak
     counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges = get_all_peaks_ext(data_ext, 
-                                                                                widths=[0.3,0.3,0.6,0.3], 
-                                                                                buffers=[2.1,2.1,2.1,2.1], 
+                                                                                widths=0.9,
+                                                                                buffers=[3,3,3,3],
                                                                                 pedestals=pedestals, 
                                                                                 double_gauss_popts=double_gauss_popts,
                                                                                 gains=gains,
@@ -182,13 +185,11 @@ def main(args=None):
                                                                                 flatten=True,
                                                                                 do_convert_to_electrons=True, 
                                                                                 range_left='default', 
-                                                                                range_right=2500, 
-                                                                                bin_factor=8,
+                                                                                range_right=1500, 
+                                                                                bin_factor=10,
                                                                                 print_values=verbose)
 
     # Fit parabola to nonlinearity curve
-    fit_range_right_ext= [400,600,500,700]
-
     peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs, parabola_pcovs, = get_nonlinearity_ext(peaks_ext,
                                                                                                         centers_ext, 
                                                                                                         pedestals, 
@@ -212,9 +213,12 @@ def main(args=None):
                             double_gauss_popts, 
                             zero_one_ranges,
                             individual_figsize=(6,5), 
-                            subplots_figsize=(9,7),
+                            subplots_figsize=(10,8),
                             xlim='default',
                             #ylim=(0.00001,2e5),
+                            additional_title=f'{args.extra_plot_title} : ' if args.extra_plot_title else '',
+                            suptitle='Double-Gaussian Fit to Zero and One Electron Peaks',
+                            nimages=args.nimages,
                             yscale='linear',
                             fontsize=8,
                             n=100, 
@@ -242,8 +246,9 @@ def main(args=None):
                     linecolor='r', 
                     linestyle='--',
                     individual_figsize=(7,6), 
-                    subplots_figsize=(9,7),
+                    additional_title=args.extra_plot_title,
                     suptitle='Peaks in Pixel Charge Distribution',
+                    nimages=args.nimages,
                     save_plots=save_plots,
                     fig_path=str(fig_path),
                     file=image_name, 
@@ -259,13 +264,15 @@ def main(args=None):
                         ylim='default',
                         individual_figsize=(6,5), 
                         subplots_figsize=(9,7),
-                        suptitle='Pixel Charge Nonlinearity Curve (Nimages = {})'.format(args.nimages),
+                        additional_title=args.extra_plot_title,
+                        suptitle='Pixel Charge Nonlinearity Curve',
+                        nimages=args.nimages,
                         line_color='r', 
                         scatter_color='b', 
                         s=2, 
                         alpha=1,
-                        plot_individual=False, 
-                        plot_together=True, 
+                        plot_individual=True, 
+                        plot_together=False, 
                         save_plots=save_plots, 
                         fig_path=str(fig_path), 
                         file=image_name, 
@@ -308,7 +315,11 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("-v", "--verbose", action="store_true", default=False, 
                        help="Print verbose output")
     parser.add_argument("--nimages", type=int, default=10, 
-                       help="Number of stitched images (used for labeling plots)")
+                       help="Number of stitched images (used for labeling plots), default: 10")
+    parser.add_argument("--extra_plot_title", type=str, default='', 
+                        help="Additional title added at beginning of all plot titles ('<Additional title>+<Default title>)")
+    parser.add_argument("--fit_range_right", nargs='+', type=int, default=500,
+                        help="Charge value in electrons to fit nonlinearity curve up to, can be list of 4 values (one per extension) or integer (used for all extensions)")
 
     args = parser.parse_args()
 
