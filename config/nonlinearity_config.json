@@ -1,0 +1,21 @@
+{
+    "file_string": "/Users/abbychriss/Privitera_335/data/test_chamber/04-30-2026/VR_6_Diego_params/stitched-fits/cds_avg_img_L2_250x3500x500_1x1_L2_125_11_stitched.fits",
+    "stitch_fits": false,
+    "plot_zero_one": false,
+    "plot_all_peaks": false,
+    "get_nonlinearity_at": null,
+    "plot_nonlinearity": true,
+    "save_plots": false,
+    "output_dir": "/Users/abbychriss/Privitera_335/VR-6_Diego_params/",
+    "verbose": false,
+    "extra_plot_title": "VR=-6 (Diego's params)\n",
+    "peak_finder_widths": 0.9,
+    "peak_finder_buffers": [3,3,3,3], 
+    "fit_range_right": [1000, 1000, 1200, 1200],
+    "max_one_peak_sigma_ratio": 1.5,
+    "do_pedestal_subtraction": true,
+    "n_std_to_mask": 1.5,
+    "pedestal_subtraction_axis": "row",
+    "use_biweight_loc": true,
+    "use_biweight_midvar": true
+}

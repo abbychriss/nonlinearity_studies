@@ -100,6 +100,8 @@ python -m nonlinearity_studies.run_nonlinearity_studies [OPTIONS] <file_string>
 run-nonlinearity-studies [OPTIONS] <file_string>
 ```
 
+You can also put `file_string` and any option below in a JSON file and run with `--config path/to/config.json`.
+
 #### Options
 
 - `-f`, `--stitch_fits`: Stitch multi-extension FITS files before analysis
@@ -110,7 +112,11 @@ run-nonlinearity-studies [OPTIONS] <file_string>
 - `-s`, `--save_plots`: Save generated plots to local computer
 - `-o`, `--output_dir`: (Optional) output directory for saved plots
 - `-v`, `--verbose`: Print verbose output
+- `-c`, `--config`: Load command-line arguments from a JSON file
 - `--nimages N`: Number of stitched images (used for plot labeling)
+- `--extra_plot_title TITLE`: Additional title text for plots
+- `--fit_range_right CHARGE`: Charge value in electrons to fit nonlinearity curve up to
+- `--max_one_peak_sigma_ratio RATIO`: Maximum allowed one-electron peak width relative to the inferred zero-peak width
 
 ## Examples
 
@@ -151,12 +157,38 @@ run-nonlinearity-studies \
     --get_nonlinearity_at 10 50 500 1000
 ```
 
+The same options can be written in JSON using argparse destination names:
+
+```json
+{
+  "file_string": "examples/images/combined-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits",
+  "plot_zero_one": true,
+  "plot_nonlinearity": true,
+  "save_plots": true,
+  "nimages": 10,
+  "fit_range_right": 500,
+  "max_one_peak_sigma_ratio": 1.5
+}
+```
+
+Then run:
+
+```bash
+run-nonlinearity-studies --config analysis_config.json
+```
+
+Explicit command-line arguments override JSON values, so this also works:
+
+```bash
+run-nonlinearity-studies --config analysis_config.json --no-save_plots
+```
+
 ## Functions
 
 ### Analysis Functions
 
 - `convert_to_electrons(data, pedestal, gain, flatten=True)`: Convert ADU values to electron counts
-- `calculate_noise_gain(data, zero_one_test_range=[8,15], n=200, fit_bounds='default')`: Determine noise and gain from charge data (single file)
+- `calculate_noise_gain(data, zero_one_test_range='auto', n=200, fit_bounds='default', max_one_peak_sigma_ratio=1.5)`: Determine noise and gain from charge data with data-driven zero/one peak initialization
 - `get_fits(file_path)`: Load FITS file data
 - `get_zero_one_peaks_ext(data, extension=None)`: Identify zero and one electron peaks for all extensions
 - `get_all_peaks_ext(data, extension=None)`: Find all electron peaks for everu extension
