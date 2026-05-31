@@ -4,10 +4,11 @@ A Python package for analyzing nonlinearity in CCDs.
 
 ## Overview
 
-- **Noise & Gain Calculation**: Determines pedestal, noise and gain from data and converts to e-
+- **Pedestal Subtraction**: Independently computes and subtracts pedestal along specified axis, with optional caching so the (slow) computation only runs once per parameter set
+- **Noise & Gain Calculation**: Determines noise and gain from data and converts to e-
 - **Peak Finder**: Finds all electron peaks in charge distribution
 - **Nonlinearity Computation**: Quantifies detector response linearity as a function of charge
-- **Visualization**: Creates histograms of charge distribution and plots nonlinearity curve
+- **Visualization**: Creates histograms of charge distribution and plots nonlinearity curve, with per-plot control over individual vs. 2×2 subplot layouts, figure sizes, axis sharing, scales, limits, and titles
 - **Image Stitching**: Combine multi-extension FITS images and run analysis on stitched image
 
 ## Installation
@@ -60,23 +61,44 @@ pip install .
 
 ```python
 from nonlinearity_studies import (
-    convert_to_electrons,
-    calculate_noise_gain,
     get_fits,
+    pedestal_subtract_ext_cached,
+    get_zero_one_peaks_ext,
+    get_all_peaks_ext,
+    get_nonlinearity_ext,
     plot_nonlinearity,
 )
 
-# Load FITS data
-data = get_fits("path/to/fits/file.fits")
+fits_path = "path/to/stitched.fits"
 
-# Calculate noise and gain
-noise, gain, pedestal = calculate_noise_gain(data)
+# Load all 4 extensions
+data_ext = get_fits(fits_path)
 
-# Convert to electrons
-data_electrons = convert_to_electrons(data, pedestal, gain)
+# (Optional) pedestal-subtract with FITS caching
+data_ext = pedestal_subtract_ext_cached(
+    data_ext, source_path=fits_path,
+    n_std_to_mask=1.5, axis="row",
+    use_biweight_loc=True, use_biweight_midvar=True,
+)
 
-# Plot results
-plot_nonlinearity(data_electrons)
+# Fit zero/one peaks to get pedestals, gains, double-Gaussian params per extension
+zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges = \
+    get_zero_one_peaks_ext(data_ext)
+
+# Find every electron peak in each extension
+counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges = get_all_peaks_ext(
+    data_ext, widths=0.9, buffers=[3, 3, 3, 3],
+    pedestals=pedestals, double_gauss_popts=double_gauss_popts, gains=gains,
+)
+
+# Fit the parabolic nonlinearity model
+peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs, parabola_pcovs = \
+    get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_right_ext=500)
+
+plot_nonlinearity(
+    peaks_ext, parabola_coeffs, peak_charge_e_ext, charge_minus_npeak_ext,
+    fit_range_right_ext=500,
+)
 ```
 
 ### Command-line interface
@@ -100,23 +122,59 @@ python -m nonlinearity_studies.run_nonlinearity_studies [OPTIONS] <file_string>
 run-nonlinearity-studies [OPTIONS] <file_string>
 ```
 
-You can also put `file_string` and any option below in a JSON file and run with `--config path/to/config.json`.
+You can also put `file_string` and any option below in a JSON file and run with `-j path/to/config.json`. Every boolean flag has a matching `--no-<flag>` variant for overriding a JSON-config `true` from the command line.
 
 #### Options
 
+##### Pipeline / I/O
+- `-j`, `--json PATH`: Load command-line arguments from a JSON config file (CLI arguments override JSON values)
 - `-f`, `--stitch_fits`: Stitch multi-extension FITS files before analysis
-- `-z`, `--plot_zero_one`: Plot zero and one electron peaks
-- `-a`, `--plot_all_peaks`: Plot all identified peaks
-- `-g`, `--get_nonlinearity_at CHARGES`: Calculate nonlinearity at specific charge values
-- `-n`, `--plot_nonlinearity`: Plot nonlinearity curve
-- `-s`, `--save_plots`: Save generated plots to local computer
-- `-o`, `--output_dir`: (Optional) output directory for saved plots
+- `-s`, `--save_plots`: Save generated plots as JPEGs
+- `-o`, `--save_plot_dir DIR`: Output directory for saved plots
 - `-v`, `--verbose`: Print verbose output
-- `-c`, `--config`: Load command-line arguments from a JSON file
-- `--nimages N`: Number of stitched images (used for plot labeling)
-- `--extra_plot_title TITLE`: Additional title text for plots
-- `--fit_range_right CHARGE`: Charge value in electrons to fit nonlinearity curve up to
+- `--nimages N`: Number of stitched images (used for plot labeling). Auto-detected from filenames matching `_N_stitched`
+- `--extra_plot_title TITLE`: Additional title text prepended to every plot title
+
+##### What to plot
+- `-z`, `--plot_zero_one_adu`: Plot zero/one electron peak fits in ADU
+- `--plot_zero_one_electrons`: Plot zero/one electron peak fits in e- (independent of the ADU flag)
+- `-a`, `--plot_all_peaks`: Plot the full charge distribution with a marker at each peak
+- `-n`, `--plot_nonlinearity`: Plot the nonlinearity curve and parabolic fit
+- `-g`, `--get_nonlinearity_at CHARGE...`: Evaluate the nonlinearity polynomial at one or more charge values
+
+##### Pedestal subtraction
+- `--do_pedestal_subtraction` / `--no-do_pedestal_subtraction`: Toggle pedestal subtraction (default `true`)
+- `--n_std_to_mask FLOAT`: Mask threshold (in standard deviations) for the pedestal estimator
+- `--pedestal_subtraction_axis {row, col, row_then_col, col_then_row}`: Axis to compute the pedestal across
+- `--use_biweight_loc` / `--use_biweight_midvar`: Use Tukey biweight location/midvariance instead of mean/std
+- `--pedsub_cache_dir DIR`: Directory for the pedestal-subtracted FITS cache (default: alongside the source FITS)
+- `--force_pedsub`: Recompute pedestal subtraction even if a matching cache exists
+
+##### Fitting
+- `--peak_finder_widths W [W ...]`: Minimum peak width required by `scipy.signal.find_peaks`, in **electrons** (internally multiplied by `bin_factor` to convert to bins). Scalar or one per extension. Larger = filters narrow noise spikes more aggressively.
+- `--peak_finder_buffers B [B ...]`: Buffer (in **bins**) SUBTRACTED from `bin_factor` to compute the minimum neighbor-peak distance: `d = bin_factor - buffer`. With the default `bin_factor=10`: `buffer=0` → 10 bins = 1 electron spacing (physical), `buffer=3` → 7 bins ≈ 0.7 electron (loose), `buffer=-2` → 12 bins = 1.2 electron (strict). Larger buffer = looser; smaller/negative = stricter.
+- `--peak_finder_prominences P [P ...]`: Minimum peak prominence in **histogram counts** (same units as the y-axis of `plot_all_peaks`). Scalar, one per extension, or `null` to disable. Often the most robust filter — measures how far a peak sticks up above its surrounding baseline, regardless of width.
+- `--bin_factor N`: Number of histogram bins per electron in the all-peaks histogram (default `10`). Also drives the `peak_finder_widths` electron-to-bin conversion (`width_in_bins = width_in_electrons * bin_factor`) and the buffer math (`distance_in_bins = bin_factor - buffer`). Higher = finer histogram, but small-width/large-buffer values become more permissive.
+- `--fit_range_right CHARGE [CHARGE ...]`: Right charge bound for the parabolic nonlinearity fit (scalar or one per extension)
 - `--max_one_peak_sigma_ratio RATIO`: Maximum allowed one-electron peak width relative to the inferred zero-peak width
+
+##### Plot layout (per plot type)
+For each of `plot_zero_one`, `plot_all_peaks`, `plot_nonlinearity`:
+- `--<plot>_individual` / `--no-<plot>_individual`: Render one figure per extension
+- `--<plot>_together` / `--no-<plot>_together`: Render a single 2×2 subplot grid for all extensions
+- `--<plot>_individual_figsize W H`: Figure size for individual mode
+- `--<plot>_subplots_figsize W H`: Figure size for the 2×2 together mode
+- `--<plot>_sharex` / `--no-<plot>_sharex`: Share x-axis range across the 2×2 grid
+- `--<plot>_sharey` / `--no-<plot>_sharey`: Share y-axis range across the 2×2 grid
+
+Top-row x-axis labels and right-column y-axis labels are always hidden in the 2×2 grids (tick labels are kept regardless of `sharex`/`sharey`).
+
+##### Plot styling
+- `--plot_zero_one_yscale {linear, log}`
+- `--plot_all_peaks_xlim LEFT RIGHT` / `--plot_all_peaks_ylim BOTTOM TOP`
+- `--plot_all_peaks_yscale {linear, log}`
+- `--plot_nonlinearity_xlim ...` / `--plot_nonlinearity_ylim ...`: 2 values for a shared limit across extensions, or 8 values (`L1 R1 L2 R2 L3 R3 L4 R4`) for per-extension limits
+- `--show_titles` / `--no-show_titles`: Toggle all `fig.suptitle` and `ax.set_title` calls across every plot
 
 ## Examples
 
@@ -125,63 +183,121 @@ For the first example, we will fit the zero and one electron peaks for a single 
 ```bash
 run-nonlinearity-studies \
     "examples/images/ten-images/avg_img_CV_250x3500x500_bin1x1_125_20260317_213403_0.fz" \
-    --plot_zero_one \
+    --plot_zero_one_adu
 ```
 
-Next, let's stitch 10 images together from examples/images/ten-images folder and run the analysis script on these
- images:
+Next, let's stitch 10 images together from `examples/images/ten-images/` and run the analysis script on the stitched output:
 
 ```bash
 run-nonlinearity-studies \
     "examples/images/ten-images/*" \
     --stitch_fits \
-    --plot_zero_one \
-    --plot_nonlinearity \
+    --plot_zero_one_adu \
+    --plot_nonlinearity
 ```
-  
-Now every time we want to analyze the stitched image again, we can pass the stitched image directly into the script and remove the --stitch_fits flag, instead of restitching and overwriting the stitched image. Run the stitched image and save the plots:
+
+Now every time we want to analyze the stitched image again, we can pass the stitched image directly into the script (and drop `--stitch_fits`). The pedestal-subtracted result is cached next to the source as `<stem>.pedsub.fits` and reused on subsequent runs if the pedsub params match. Run the stitched image and save the plots:
 
 ```bash
 run-nonlinearity-studies \
-    "examples/images/combined-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
-    --plot_zero_one \
+    "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
+    --plot_zero_one_adu --plot_zero_one_electrons \
     --plot_nonlinearity \
     --save_plots
 ```
 
-If we want to just get the nonlinearity at specific charge values we can run
+If we want only the nonlinearity at specific charge values:
 
 ```bash
 run-nonlinearity-studies \
-    "examples/images/combined-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
+    "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
     --get_nonlinearity_at 10 50 500 1000
 ```
 
-The same options can be written in JSON using argparse destination names:
+The same options can be written in JSON using argparse destination names. A reasonably complete config might look like:
 
 ```json
 {
-  "file_string": "examples/images/combined-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits",
-  "plot_zero_one": true,
-  "plot_nonlinearity": true,
+  "file_string": "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits",
+  "stitch_fits": false,
   "save_plots": true,
-  "nimages": 10,
-  "fit_range_right": 500,
-  "max_one_peak_sigma_ratio": 1.5
+  "save_plot_dir": null,
+
+  "plot_zero_one_adu": true,
+  "plot_zero_one_electrons": true,
+  "plot_all_peaks": true,
+  "plot_nonlinearity": true,
+  "get_nonlinearity_at": 500,
+
+  "do_pedestal_subtraction": true,
+  "n_std_to_mask": 1.5,
+  "pedestal_subtraction_axis": "row",
+  "use_biweight_loc": true,
+  "use_biweight_midvar": true,
+  "pedsub_cache_dir": null,
+  "force_pedsub": false,
+
+  "peak_finder_widths": 0.9,
+  "peak_finder_buffers": [3, 3, 3, 3],
+  "peak_finder_prominences": null,
+  "fit_range_right": [1000, 800, 1100, 1100],
+  "max_one_peak_sigma_ratio": 1.5,
+
+  "plot_zero_one_individual": false,
+  "plot_zero_one_together": true,
+  "plot_zero_one_individual_figsize": [8, 6],
+  "plot_zero_one_subplots_figsize": [12, 8],
+  "plot_zero_one_yscale": "linear",
+  "plot_zero_one_sharex": true,
+  "plot_zero_one_sharey": true,
+
+  "plot_all_peaks_individual": false,
+  "plot_all_peaks_together": true,
+  "plot_all_peaks_individual_figsize": [7, 6],
+  "plot_all_peaks_subplots_figsize": [9, 7],
+  "plot_all_peaks_xlim": [1000, 1050],
+  "plot_all_peaks_ylim": [0, 40],
+  "plot_all_peaks_yscale": "linear",
+  "plot_all_peaks_sharex": true,
+  "plot_all_peaks_sharey": true,
+
+  "plot_nonlinearity_individual": false,
+  "plot_nonlinearity_together": true,
+  "plot_nonlinearity_individual_figsize": [6, 5],
+  "plot_nonlinearity_subplots_figsize": [9, 7],
+  "plot_nonlinearity_xlim": [-50, 1300],
+  "plot_nonlinearity_ylim": [-40, 5],
+  "plot_nonlinearity_sharex": true,
+  "plot_nonlinearity_sharey": true,
+
+  "show_titles": true,
+  "extra_plot_title": "VR=-7: ",
+  "nimages": 10
 }
 ```
 
 Then run:
 
 ```bash
-run-nonlinearity-studies --config analysis_config.json
+run-nonlinearity-studies -j config/nonlinearity_config.json
 ```
 
 Explicit command-line arguments override JSON values, so this also works:
 
 ```bash
-run-nonlinearity-studies --config analysis_config.json --no-save_plots
+run-nonlinearity-studies -j config/nonlinearity_config.json --no-save_plots
 ```
+
+### Pedestal-subtraction caching
+
+Pedestal subtraction is the slowest step in the pipeline. The first time it runs for a given source FITS file, the result is written to `<stem>.pedsub.fits` alongside the source (or to `--pedsub_cache_dir`). The four pedestal-subtraction parameters (`axis`, `n_std_to_mask`, `use_biweight_loc`, `use_biweight_midvar`) are written into the FITS header as `PEDSUB_A`, `PEDSUB_N`, `PEDSUB_L`, `PEDSUB_V`.
+
+On subsequent runs:
+- If the cache exists AND the header params match the current params → cached arrays are loaded instantly.
+- If params differ → cache is overwritten with a fresh computation.
+- Pass `--force_pedsub` to bypass the cache without deleting it.
+
+The cache is **not** automatically invalidated if the source FITS file itself changes (e.g. you re-stitch). In that case, delete the `.pedsub.fits` file or use `--force_pedsub`.
 
 ## Functions
 
@@ -189,32 +305,40 @@ run-nonlinearity-studies --config analysis_config.json --no-save_plots
 
 - `convert_to_electrons(data, pedestal, gain, flatten=True)`: Convert ADU values to electron counts
 - `calculate_noise_gain(data, zero_one_test_range='auto', n=200, fit_bounds='default', max_one_peak_sigma_ratio=1.5)`: Determine noise and gain from charge data with data-driven zero/one peak initialization
-- `get_fits(file_path)`: Load FITS file data
-- `get_zero_one_peaks_ext(data, extension=None)`: Identify zero and one electron peaks for all extensions
-- `get_all_peaks_ext(data, extension=None)`: Find all electron peaks for everu extension
-- `get_nonlinearity_ext(data, extension=None)`: Calculate nonlinearity curve for all extensions
-- `get_nonlinearity_at_ext(data, charge_values, extension=None)`: Calculate nonlinearity at specific charges for all extensions
+- `pedestal_subtract(data, n_std_to_mask, axis='row', use_biweight_loc=True, use_biweight_midvar=True)`: Vectorized per-row/column pedestal subtraction for a single extension
+- `pedestal_subtract_ext_cached(data_ext, source_path, n_std_to_mask, axis='row', use_biweight_loc=True, use_biweight_midvar=True, cache_dir=None, force=False, verbose=True)`: Wraps `pedestal_subtract` across all extensions and caches the result to `<source_stem>.pedsub.fits`. Reuses the cache when the four pedestal parameters match those recorded in the cached FITS header.
+- `get_fits(file_path)`: Load FITS file data (returns list of 4 extension arrays)
+- `find_all_peaks(data, width, buffer, pedestal, noise, gain, ...)`: Single-extension peak finder
+- `fit_nonlinearity(peaks, centers, pedestal, gain, fit_range_right, ...)`: Single-extension parabolic fit of the nonlinearity curve
+- `get_zero_one_peaks_ext(data_ext, n=200, fit_bounds='default', zero_one_test_range='auto', max_one_peak_sigma_ratio=1.5)`: Per-extension zero/one peak fits; returns counts, edges, pedestals, gains, double-Gaussian popts, fit ranges
+- `get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, ...)`: Per-extension peak finder
+- `get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_right_ext, ...)`: Per-extension nonlinearity fit
+- `get_nonlinearity_at_ext(q, parabola_coeffs, parabola_pcovs, fit_range_right_ext)`: Evaluate the parabolic fit at one or more charge values, per extension
 
 ### Plotting Functions
 
-- `plot_zero_one_peaks(data, **kwargs)`: Visualize zero and one electron peaks
-- `plot_all_peaks(data, **kwargs)`: Visualize all identified peaks
-- `plot_nonlinearity(data, **kwargs)`: Plot nonlinearity curve
+Each plotting function accepts `plot_individual` and `plot_together` toggles, individual + 2×2 figure sizes, `sharex`/`sharey` for the 2×2 grid, `show_titles`, and `save_plots`/`fig_path` for output.
+
+- `plot_zero_one_peaks(data_ext, zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges, do_plot_adu=True, do_convert_to_electrons=False, yscale='linear', ...)`: Visualize zero/one electron peak fits in ADU and/or electrons.
+- `plot_all_peaks(counts_ext, peaks_ext, centers_ext, xlim, ylim='none', yscale='log', draw_lines=True, ...)`: Visualize the full charge distribution with a marker at each identified peak.
+- `plot_nonlinearity(peaks_ext, parabola_coeffs, peak_charge_e_ext, charge_minus_npeak_ext, fit_range_right_ext, xlim='default', ylim='default', ...)`: Plot the nonlinearity curve and parabolic fit. `xlim`/`ylim` accept `'default'`, `'none'`, a single `(left, right)` applied to all extensions, or a list of 4 per-extension tuples.
 
 ### Utility
 
-- `stitch_fits`(file_path, **kwargs): stitching multiple FITS files across each extension. Data be same shape.
+- `stitch_fits(file_path, **kwargs)`: Stitch multiple FITS files across each extension. All files must have the same shape. Prints progress (`0/N`, `5/N`, ..., `N/N`).
 
 ## Structure
 
 ```
 nonlinearity_studies/
 ├── __init__.py                      # Package initialization
+├── config/                          # Example JSON configs
+│   └── nonlinearity_config.json
 ├── examples/                        # Examples directory (images, scripts, etc)
 ├── nonlinearity_studies/            # Main package directory
-    ├── nonlinearity_studies.py      # Core analysis functions
-    ├── stitch_fits.py               # FITS image stitching utility
-    └── run_nonlinearity_studies.py  # Command-line interface
+│   ├── nonlinearity_studies.py      # Core analysis + plotting functions
+│   ├── stitch_fits.py               # FITS image stitching utility
+│   └── run_nonlinearity_studies.py  # Command-line interface
 ├── setup.py                         # Package configuration
 ├── environment.yml                  # Conda environment configuration file
 ├── .gitignore                       # File telling git which files not to track

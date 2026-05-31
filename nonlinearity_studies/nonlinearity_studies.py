@@ -302,6 +302,71 @@ def pedestal_subtract(data, n_std_to_mask, axis='row', use_biweight_loc=True, us
     return data
 
 
+_PEDSUB_HEADER_KEYS = ('PEDSUB_A', 'PEDSUB_N', 'PEDSUB_L', 'PEDSUB_V')
+
+
+def _pedsub_cache_path(source_path, cache_dir=None):
+    source = Path(source_path)
+    base = cache_dir if cache_dir is not None else source.parent
+    base = Path(base)
+    if cache_dir is not None:
+        base.mkdir(parents=True, exist_ok=True)
+    return base / f'{source.stem}.pedsub.fits'
+
+
+def _pedsub_header_matches(header, axis, n_std_to_mask, use_biweight_loc, use_biweight_midvar):
+    if not all(k in header for k in _PEDSUB_HEADER_KEYS):
+        return False
+    return (
+        header['PEDSUB_A'] == axis
+        and float(header['PEDSUB_N']) == float(n_std_to_mask)
+        and bool(header['PEDSUB_L']) == bool(use_biweight_loc)
+        and bool(header['PEDSUB_V']) == bool(use_biweight_midvar)
+    )
+
+
+def pedestal_subtract_ext_cached(data_ext, source_path, n_std_to_mask, axis='row',
+                                 use_biweight_loc=True, use_biweight_midvar=True,
+                                 cache_dir=None, force=False, verbose=True):
+    """Pedestal-subtract each extension, caching the result to a FITS file next to the source.
+
+    On rerun, if the cache exists and its header params match the requested params, the cached
+    arrays are loaded instead of recomputing. Pass force=True to bypass the cache.
+    """
+    cache_path = _pedsub_cache_path(source_path, cache_dir)
+
+    if not force and cache_path.exists():
+        with fits.open(str(cache_path)) as hdul:
+            if _pedsub_header_matches(hdul[0].header, axis, n_std_to_mask,
+                                       use_biweight_loc, use_biweight_midvar):
+                if verbose:
+                    print(f'Loading cached pedestal-subtracted data from {cache_path}')
+                return [hdul[i].data.copy() for i in range(1, len(hdul))]
+            elif verbose:
+                print(f'Cached params at {cache_path} differ from current; recomputing.')
+
+    if verbose:
+        print('Computing pedestal subtraction...')
+    pedsub_data_ext = [
+        pedestal_subtract(data, n_std_to_mask=n_std_to_mask, axis=axis,
+                          use_biweight_loc=use_biweight_loc, use_biweight_midvar=use_biweight_midvar)
+        for data in data_ext
+    ]
+
+    primary = fits.PrimaryHDU()
+    primary.header['PEDSUB_A'] = (axis, 'pedestal subtraction axis')
+    primary.header['PEDSUB_N'] = (float(n_std_to_mask), 'n_std_to_mask')
+    primary.header['PEDSUB_L'] = (bool(use_biweight_loc), 'use biweight location')
+    primary.header['PEDSUB_V'] = (bool(use_biweight_midvar), 'use biweight midvariance')
+    primary.header['SRC_FITS'] = (str(source_path)[-68:], 'source FITS file (truncated)')
+    hdul_out = fits.HDUList([primary] + [fits.ImageHDU(data=arr) for arr in pedsub_data_ext])
+    hdul_out.writeto(str(cache_path), overwrite=True)
+    if verbose:
+        print(f'Saved pedestal-subtracted cache to {cache_path}')
+
+    return pedsub_data_ext
+
+
 #---------------- (2) Find peaks ----------------------------
 # Finds all electron peaks in flattened pixel charge array per extension
 # First converts data from ADU to electrons (if not already in electrons)
@@ -310,22 +375,23 @@ def pedestal_subtract(data, n_std_to_mask, axis='row', use_biweight_loc=True, us
 # bin_factor is the multiple of the length of range used in fitting all peaks (number of bins per peak essentially)
 # bin_factor is also used to define the distance parameter given to scipy_find_peaks 
 # for the min distance between peaks (with buffer given by buffer) 
-def find_all_peaks(data, 
-                   width, 
-                   buffer, 
+def find_all_peaks(data,
+                   width,
+                   buffer,
                    pedestal,
                    noise,
                    gain,
                    bins='default',
                    flatten=True,
                    do_convert_to_electrons=True,
-                   range_left='left_of_zero', 
-                   range_right=2500, 
-                   bin_factor=8):
+                   range_left='left_of_zero',
+                   range_right=2500,
+                   bin_factor=8,
+                   prominence=None):
 
     if flatten:
         data=np.array(data).flatten()
-    
+
     if do_convert_to_electrons:
         data = convert_to_electrons(data, pedestal, gain, flatten=False)
 
@@ -342,7 +408,7 @@ def find_all_peaks(data,
 
     counts, edges = np.histogram(data, bins=bins,range=hist_range)
     centers = 0.5 * (edges[1:] + edges[:-1])
-    peaks, properties = scipy_find_peaks(counts, height=0, width=width, distance=bin_factor-buffer)
+    peaks, properties = scipy_find_peaks(counts, height=0, width=width*bin_factor, distance=bin_factor-buffer, prominence=prominence)
 
     return counts, edges, peaks, centers, properties, hist_range
 
@@ -360,6 +426,13 @@ def fit_nonlinearity(peaks, centers, pedestal, gain, fit_range_right, do_convert
 
     charge_minus_npeak = [(peak_charge_e[i] - i) for i in range(len(peaks))]
     fit_idx = int(np.searchsorted(peak_charge_e, fit_range_right))
+    if fit_idx < 3:
+        raise ValueError(
+            f'Not enough peaks below fit_range_right={fit_range_right} to fit a parabola '
+            f'(found {fit_idx}, need >=3). Total peaks detected: {len(peaks)}. '
+            f'Loosen the peak-finder filters (lower peak_finder_widths, raise peak_finder_buffers, '
+            f'lower peak_finder_prominences) or raise fit_range_right.'
+        )
     parabola_coeff, parabola_pcov = curve_fit(parabola, peak_charge_e[:fit_idx], charge_minus_npeak[:fit_idx],
                            maxfev=2000, bounds=(fit_bounds_low, fit_bounds_high))
     return parabola_coeff, parabola_pcov, peak_charge_e, charge_minus_npeak
@@ -425,8 +498,12 @@ def plot_zero_one_peaks(data_ext,
                         electron_fit_bounds=([0.001, -0.9, 0.1, 0.05, 0, 0], [1.0,  1,  1.0,  1.1, 1e10, 1e10]),
                         plot_individual=False,
                         plot_together=True,
+                        do_plot_adu=True,
+                        sharex=True,
+                        sharey=True,
+                        show_titles=True,
                         save_plots=False,
-                        fig_path='./', file='zero_one_peaks', 
+                        fig_path='./', file='zero_one_peaks',
                         dpi=350):
 
     fig_path = Path(fig_path)
@@ -437,21 +514,21 @@ def plot_zero_one_peaks(data_ext,
     fig_name = fig_path / base_name
 
     if plot_individual:
-        for ext, data in enumerate(data_ext):
+        for ext, data in (enumerate(data_ext) if do_plot_adu else []):
             data = np.array(data).flatten()
 
             zero_one_counts=zero_one_counts_ext[ext]
             zero_one_edges=zero_one_edges_ext[ext]
-            pedestal=pedestals[ext] 
+            pedestal=pedestals[ext]
             gain=gains[ext]
             double_gauss_popt=double_gauss_popts[ext]
             zero_one_range=zero_one_ranges[ext]
 
             fig, ax = plt.subplots(1, 1, figsize=individual_figsize, constrained_layout=True)
-            fig.suptitle(f'{additional_title}{suptitle} in ADU (Nimages = {nimages})')
+            if show_titles:
+                fig.suptitle(f'{additional_title}{suptitle} in ADU (Nimages = {nimages}): EXT {ext + 1}')
             ax.set_xlabel('Charge (ADU)')
             ax.set_ylabel('N')
-            ax.set_title(f'EXT {ext + 1}')
 
             double_gauss_coeff = tuple(double_gauss_popt)+(gain,)
             data_window = data[(data > zero_one_range[0]) & (data < zero_one_range[1])]
@@ -512,8 +589,8 @@ def plot_zero_one_peaks(data_ext,
                                                                      bounds=electron_fit_bounds)
 
                 fig, ax = plt.subplots(1, 1, figsize=individual_figsize, constrained_layout=True)
-                fig.suptitle(rf'{additional_title}{suptitle} in $e^-$ (Nimages = {nimages})')
-                ax.set_title(f'EXT {ext + 1}')
+                if show_titles:
+                    fig.suptitle(rf'{additional_title}{suptitle} in $e^-$ (Nimages = {nimages}): EXT {ext + 1}')
 
                 if yscale=='log':
                     zero_one_counts_e = np.maximum(zero_one_counts_e, 1)
@@ -549,66 +626,77 @@ def plot_zero_one_peaks(data_ext,
 
     if plot_together:
 
-        fig, axs = plt.subplots(2, 2, figsize=subplots_figsize, constrained_layout=True)
-        fig.suptitle(f'{additional_title}{suptitle} in ADU (Nimages = {nimages})')
-        axs = axs.flatten()
+        if do_plot_adu:
+            fig, axs = plt.subplots(2, 2, figsize=subplots_figsize, constrained_layout=True, sharex=sharex, sharey=sharey)
+            if show_titles:
+                fig.suptitle(f'{additional_title}{suptitle} in ADU (Nimages = {nimages})')
+            axs = axs.flatten()
 
-        for ext, data in enumerate(data_ext):
-            data = np.array(data).flatten()
-            zero_one_counts=zero_one_counts_ext[ext]
-            zero_one_edges=zero_one_edges_ext[ext]
-            pedestal=pedestals[ext] 
-            gain=gains[ext]
-            double_gauss_popt=double_gauss_popts[ext]
-            zero_one_range=zero_one_ranges[ext]
+            for ext, data in enumerate(data_ext):
+                data = np.array(data).flatten()
+                zero_one_counts=zero_one_counts_ext[ext]
+                zero_one_edges=zero_one_edges_ext[ext]
+                pedestal=pedestals[ext]
+                gain=gains[ext]
+                double_gauss_popt=double_gauss_popts[ext]
+                zero_one_range=zero_one_ranges[ext]
 
-            ax = axs[ext]
-            double_gauss_coeff = tuple(double_gauss_popt)+(gain,)
-            data_window = data[(data > zero_one_range[0]) & (data < zero_one_range[1])]
-            nbins=int(n*(zero_one_range[1]-zero_one_range[0]))
+                ax = axs[ext]
+                double_gauss_coeff = tuple(double_gauss_popt)+(gain,)
+                data_window = data[(data > zero_one_range[0]) & (data < zero_one_range[1])]
+                nbins=int(n*(zero_one_range[1]-zero_one_range[0]))
 
-            zero_one_centers = 0.5 * (zero_one_edges[:-1] + zero_one_edges[1:])
-            bin_width = zero_one_edges[1] - zero_one_edges[0]
+                zero_one_centers = 0.5 * (zero_one_edges[:-1] + zero_one_edges[1:])
+                bin_width = zero_one_edges[1] - zero_one_edges[0]
 
-            if yscale=='log':
-                zero_one_counts = np.maximum(zero_one_counts, 1) #need in order to prevent empty bars in histogram if there are any bins that have 0 counts
-                ax.set_yscale('log')
-            elif yscale!='linear':
+                if yscale=='log':
+                    zero_one_counts = np.maximum(zero_one_counts, 1) #need in order to prevent empty bars in histogram if there are any bins that have 0 counts
+                    ax.set_yscale('log')
+                elif yscale!='linear':
                     ax.set_yscale(yscale)
 
-            ax.bar(zero_one_centers, zero_one_counts, align='center', edgecolor='none', linewidth=0, width=bin_width)
-            
-            ax.plot(zero_one_centers, double_gauss(zero_one_centers, *double_gauss_popt), 'r',
-                label=r'$\sigma_0$ = %5.3f, $\mu_0$ = %5.3f, $\sigma_1$ = %5.3f, $\mu_1$ = %5.3f,'%double_gauss_coeff[0:4]
-                +'\n'+'$N_0$ = %5.3f, $N_1$ = %5.3f, gain = %5.3f ADU/$e^{–}$'%double_gauss_coeff[4:])
-            
-            ax.set_xlabel('Charge (ADU)')
-            ax.set_ylabel('N')
-            ax.set_title(f'EXT {ext + 1}')
-            ax.legend(loc="upper right", fontsize=fontsize)
+                ax.bar(zero_one_centers, zero_one_counts, align='center', edgecolor='none', linewidth=0, width=bin_width)
 
-            if xlim=='default':
-                ax.set_xlim(zero_one_range[0],zero_one_range[1])
-            elif xlim!='none':
-                ax.set_xlim(xlim)
+                ax.plot(zero_one_centers, double_gauss(zero_one_centers, *double_gauss_popt), 'r',
+                    label=r'$\sigma_0$ = %5.3f, $\mu_0$ = %5.3f, $\sigma_1$ = %5.3f, $\mu_1$ = %5.3f,'%double_gauss_coeff[0:4]
+                    +'\n'+'$N_0$ = %5.3f, $N_1$ = %5.3f, gain = %5.3f ADU/$e^{–}$'%double_gauss_coeff[4:])
 
-            if ylim=='default':
-                if yscale=='log':
-                    ax.set_ylim(0, np.max(zero_one_counts) * 1e4)
-                elif yscale=='linear':
-                    ax.set_ylim(0, np.max(zero_one_counts) + 2.5e4)
-            elif ylim!='none':
-                ax.set_ylim(ylim)
+                ax.set_xlabel('Charge (ADU)')
+                ax.set_ylabel('N')
+                if show_titles:
+                    ax.set_title(f'EXT {ext + 1}')
+                ax.legend(loc="upper right", fontsize=fontsize)
 
-        if save_plots:
-            output_path = fig_name.with_suffix('.jpeg')
-            plt.savefig(str(output_path), dpi=dpi)
-            print(f'Saved plot to {output_path}')
-        plt.show()
+                if xlim=='default':
+                    ax.set_xlim(zero_one_range[0],zero_one_range[1])
+                elif xlim!='none':
+                    ax.set_xlim(xlim)
+
+                if ylim=='default':
+                    if yscale=='log':
+                        ax.set_ylim(0, np.max(zero_one_counts) * 1e4)
+                    elif yscale=='linear':
+                        ax.set_ylim(0, np.max(zero_one_counts) + 2.5e4)
+                elif ylim!='none':
+                    ax.set_ylim(ylim)
+
+            for i in (0, 1):
+                axs[i].set_xlabel('')
+                axs[i].tick_params(labelbottom=True)
+            for i in (1, 3):
+                axs[i].set_ylabel('')
+                axs[i].tick_params(labelleft=True)
+
+            if save_plots:
+                output_path = fig_name.with_suffix('.jpeg')
+                plt.savefig(str(output_path), dpi=dpi)
+                print(f'Saved plot to {output_path}')
+            plt.show()
 
         if do_convert_to_electrons:
-            fig, axs = plt.subplots(2, 2, figsize=subplots_figsize, constrained_layout=True)
-            fig.suptitle(rf'{additional_title}{suptitle} in $e^-$ (Nimages = {nimages})')
+            fig, axs = plt.subplots(2, 2, figsize=subplots_figsize, constrained_layout=True, sharex=sharex, sharey=sharey)
+            if show_titles:
+                fig.suptitle(rf'{additional_title}{suptitle} in $e^-$ (Nimages = {nimages})')
             axs = axs.flatten()
 
             for ext, data in enumerate(data_ext):
@@ -643,15 +731,14 @@ def plot_zero_one_peaks(data_ext,
 
                 ax.bar(zero_one_centers_e, zero_one_counts_e, align='center', edgecolor='none', linewidth=0, width=bin_width_e)
 
-                ax.set_title(f'EXT {ext + 1}')
+                if show_titles:
+                    ax.set_title(f'EXT {ext + 1}')
                 ax.plot(zero_one_centers_e, double_gauss(zero_one_centers_e, *double_gauss_popt_e), 'r',
                     label=r'$\sigma_0$ = %5.3f $e^{–}$, $\mu_0$ = %5.3f $e^{–}$, $\sigma_1$ = %5.3f $e^{–}$, $\mu_1$ = %5.3f $e^{–}$'%tuple(double_gauss_popt_e)[0:4])
                 ax.legend(loc="upper right", fontsize=fontsize)
                 ax.set_xlabel(r'Charge ($e^–$)')
                 ax.set_ylabel('N')
 
-                ax.set_title(f'EXT {ext + 1}')
-                
                 if xlim=='default':
                     ax.set_xlim(zero_one_range_e[0], zero_one_range_e[1])
                 elif xlim!='none':
@@ -664,6 +751,13 @@ def plot_zero_one_peaks(data_ext,
                         ax.set_ylim(0, np.max(zero_one_counts_e) + 2.5e4)
                 elif ylim!='none':
                     ax.set_ylim(ylim)
+
+            for i in (0, 1):
+                axs[i].set_xlabel('')
+                axs[i].tick_params(labelbottom=True)
+            for i in (1, 3):
+                axs[i].set_ylabel('')
+                axs[i].tick_params(labelleft=True)
 
             if save_plots:
                 output_path = fig_name.with_stem(fig_name.stem + '_electrons').with_suffix('.jpeg')
@@ -680,12 +774,15 @@ def plot_all_peaks(counts_ext,
                    centers_ext, 
                    xlim, ylim='none', 
                    yscale='log', 
-                   plot_individual=True, plot_together=False, 
+                   plot_individual=True, plot_together=False,
                    draw_lines=True, linecolor='r', linestyle='--',
                    individual_figsize=(6,5), subplots_figsize=(9,7),
                    additional_title='',
                    suptitle='Peaks in Pixel Charge Distribution',
                    nimages=10,
+                   sharex=True,
+                   sharey=True,
+                   show_titles=True,
                    save_plots=False,
                    fig_path='./', file='peak_finder', 
                    dpi=350):
@@ -704,7 +801,8 @@ def plot_all_peaks(counts_ext,
             bin_width = centers[1] - centers[0]
             
             fig, ax = plt.subplots(1, 1, figsize=individual_figsize, constrained_layout=True)
-            fig.suptitle(f'{additional_title}{suptitle}: EXT {ext + 1}')
+            if show_titles:
+                fig.suptitle(f'{additional_title}{suptitle}: EXT {ext + 1}')
             ax.bar(centers, counts, align='center', edgecolor='none', linewidth=0, width=bin_width)
             ax.set_xlabel(r'Charge ($e^-$)')
             ax.set_ylabel('N')
@@ -736,9 +834,10 @@ def plot_all_peaks(counts_ext,
             plt.show()
 
     if plot_together:
-        fig, axs = plt.subplots(2,2,figsize=subplots_figsize,constrained_layout=True)
+        fig, axs = plt.subplots(2,2,figsize=subplots_figsize,constrained_layout=True,sharex=sharex,sharey=sharey)
         axs=axs.flatten()
-        fig.suptitle(f'{additional_title}{suptitle}')
+        if show_titles:
+            fig.suptitle(f'{additional_title}{suptitle}')
 
         for ext, counts in enumerate(counts_ext):
             peaks=peaks_ext[ext]
@@ -754,7 +853,8 @@ def plot_all_peaks(counts_ext,
             ax.set_xlim(xlim)
             if ylim!='none':
                 ax.set_ylim(ylim)
-            ax.set_title(f'EXT {ext + 1}')
+            if show_titles:
+                ax.set_title(f'EXT {ext + 1}')
 
             # draw vertical lines and labels at each peak
             if draw_lines:
@@ -770,7 +870,14 @@ def plot_all_peaks(counts_ext,
                         horizontalalignment='center',
                         color=linecolor,
                         fontsize=10)
-        
+
+        for i in (0, 1):
+            axs[i].set_xlabel('')
+            axs[i].tick_params(labelbottom=True)
+        for i in (1, 3):
+            axs[i].set_ylabel('')
+            axs[i].tick_params(labelleft=True)
+
         if save_plots:
             output_path = fig_name.with_suffix('.jpeg')
             plt.savefig(str(output_path), dpi=dpi)
@@ -794,9 +901,12 @@ def plot_nonlinearity(peaks_ext,
                       scatter_color='b', 
                       s=2, 
                       alpha=0.5,
-                      plot_individual=False, 
-                      plot_together=True, 
-                      save_plots=False, 
+                      plot_individual=False,
+                      plot_together=True,
+                      sharex=True,
+                      sharey=True,
+                      show_titles=True,
+                      save_plots=False,
                       fig_path='./', file='nonlinearity_curve', 
                       dpi=350):
 
@@ -813,14 +923,16 @@ def plot_nonlinearity(peaks_ext,
     if plot_individual:
         for ext, peaks in enumerate(peaks_ext):
             fig, ax = plt.subplots(1, 1, figsize=individual_figsize, constrained_layout=True)
-            fig.suptitle(f'{additional_title}{suptitle} (Nimages = {nimages})')
-            ax.set_title(f'EXT {ext + 1}')
+            if show_titles:
+                fig.suptitle(f'{additional_title}{suptitle} (Nimages = {nimages}): EXT {ext + 1}')
             ax.grid()
 
             parabola_coeff=parabola_coeffs[ext]
             peak_charge_e=peak_charge_e_ext[ext]
             charge_minus_npeak=charge_minus_npeak_ext[ext]
             fit_range_right=fit_range_right_ext[ext]
+            xlim_e = xlim[ext] if isinstance(xlim, list) else xlim
+            ylim_e = ylim[ext] if isinstance(ylim, list) else ylim
 
             ax.plot(peak_charge_e, parabola(peak_charge_e, *parabola_coeff), color=line_color,
                         label=r'$%5.6f x^2 + %5.3f x + %5.3f$' %tuple(parabola_coeff))
@@ -829,16 +941,16 @@ def plot_nonlinearity(peaks_ext,
             ax.set_xlabel(r'Measured Pixel Charge ($e^-$)')
             ax.set_ylabel(r'Measured Pixel Charge - Peak n. ($e^-$) ')
 
-            if ylim=='default':
+            if ylim_e=='default':
                 fit_idx = int(np.searchsorted(peak_charge_e, fit_range_right))
                 ax.set_ylim(min(charge_minus_npeak)-10, max(charge_minus_npeak[:fit_idx])+5)
-            elif ylim!='none':
-                ax.set_ylim(ylim)
+            elif ylim_e!='none':
+                ax.set_ylim(ylim_e)
 
-            if xlim=='default':
+            if xlim_e=='default':
                 ax.set_xlim(-100, fit_range_right+500)
-            elif xlim!='none':
-                ax.set_xlim(xlim)
+            elif xlim_e!='none':
+                ax.set_xlim(xlim_e)
 
             if save_plots:
                 output_path = fig_name.with_stem(fig_name.stem + f'_EXT{ext+1}').with_suffix('.jpeg')
@@ -847,9 +959,10 @@ def plot_nonlinearity(peaks_ext,
             plt.show()
 
     if plot_together:
-        fig, axs = plt.subplots(2, 2, figsize=subplots_figsize, constrained_layout=True)
+        fig, axs = plt.subplots(2, 2, figsize=subplots_figsize, constrained_layout=True, sharex=sharex, sharey=sharey)
         axs=axs.flatten()
-        fig.suptitle(f'{additional_title}{suptitle} (Nimages = {nimages})')
+        if show_titles:
+            fig.suptitle(f'{additional_title}{suptitle} (Nimages = {nimages})')
         for ext, peak_charge_e in enumerate(peak_charge_e_ext):
             ax = axs[ext]
             ax.grid()
@@ -857,25 +970,35 @@ def plot_nonlinearity(peaks_ext,
             parabola_coeff=parabola_coeffs[ext]
             charge_minus_npeak=charge_minus_npeak_ext[ext]
             fit_range_right=fit_range_right_ext[ext]
+            xlim_e = xlim[ext] if isinstance(xlim, list) else xlim
+            ylim_e = ylim[ext] if isinstance(ylim, list) else ylim
 
             ax.plot(peak_charge_e, parabola(peak_charge_e, *parabola_coeff), color=line_color,
                         label=r'$%5.6f x^2 + %5.3f x + %5.3f$' %tuple(parabola_coeff))
             ax.scatter(peak_charge_e, charge_minus_npeak, c=scatter_color, s=s, alpha=alpha)
             ax.legend(loc="upper right", fontsize=8)
-            ax.set_title(f'EXT {ext + 1}')
+            if show_titles:
+                ax.set_title(f'EXT {ext + 1}')
             ax.set_xlabel(r'Measured Pixel Charge ($e^-$)')
             ax.set_ylabel(r'Measured Pixel Charge - Peak n. ($e^-$) ')
 
-            if ylim=='default':
+            if ylim_e=='default':
                 fit_idx = int(np.searchsorted(peak_charge_e, fit_range_right))
                 ax.set_ylim(min(charge_minus_npeak)-10, max(charge_minus_npeak[:fit_idx])+5)
-            elif ylim!='none':
-                ax.set_ylim(ylim)
-  
-            if xlim=='default':
+            elif ylim_e!='none':
+                ax.set_ylim(ylim_e)
+
+            if xlim_e=='default':
                 ax.set_xlim(-100, fit_range_right+500)
-            elif xlim!='none':
-                ax.set_xlim(xlim)
+            elif xlim_e!='none':
+                ax.set_xlim(xlim_e)
+
+        for i in (0, 1):
+            axs[i].set_xlabel('')
+            axs[i].tick_params(labelbottom=True)
+        for i in (1, 3):
+            axs[i].set_ylabel('')
+            axs[i].tick_params(labelleft=True)
 
         if save_plots:
             output_path = fig_name.with_suffix('.jpeg')
@@ -952,7 +1075,7 @@ def get_zero_one_peaks_ext(data_ext,
     return zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges
         
 
-def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, bins='default', flatten=True, do_convert_to_electrons=True, range_left='default', range_right=2000, bin_factor=8, print_values=False):
+def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, bins='default', flatten=True, do_convert_to_electrons=True, range_left='default', range_right=2000, bin_factor=8, prominences=None, print_values=False):
     counts_ext = []
     edges_ext = []
     peaks_ext = []
@@ -963,17 +1086,21 @@ def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, 
         widths = [widths] * len(data_ext)
     if type(buffers) is not list:
         buffers = [buffers] * len(data_ext)
+    if prominences is None or not isinstance(prominences, list):
+        prominences = [prominences] * len(data_ext)
 
     if print_values:
         print('\nFinding peaks for each extension with the following parameters:\n')
         print(f'Widths: {widths}')
         print(f'Buffers: {buffers}')
+        print(f'Prominences: {prominences}')
         print(f'Pedestals: {pedestals}')
         print(f'Gains: {gains}')
 
     for ext, data in enumerate(data_ext):
         width = widths[ext]
         buffer = buffers[ext]
+        prominence = prominences[ext]
         pedestal = pedestals[ext]
         noise = double_gauss_popts[ext][0]
         gain = gains[ext]
@@ -987,9 +1114,10 @@ def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, 
                                                                                bins=bins,
                                                                                flatten=flatten,
                                                                                do_convert_to_electrons=do_convert_to_electrons,
-                                                                               range_left=range_left, 
-                                                                               range_right=range_right, 
-                                                                               bin_factor=bin_factor)
+                                                                               range_left=range_left,
+                                                                               range_right=range_right,
+                                                                               bin_factor=bin_factor,
+                                                                               prominence=prominence)
     
         counts_ext.append(counts)
         edges_ext.append(edges)
@@ -1018,15 +1146,18 @@ def get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_rig
         gain=gains[ext]
         fit_range_right=fit_range_right_ext[ext]
 
-        parabola_coeff, parabola_pcov, peak_charge_e, charge_minus_npeak = fit_nonlinearity(peaks,
+        try:
+            parabola_coeff, parabola_pcov, peak_charge_e, charge_minus_npeak = fit_nonlinearity(peaks,
                                                                              centers,
-                                                                             pedestal, 
-                                                                             gain, 
-                                                                             fit_range_right, 
+                                                                             pedestal,
+                                                                             gain,
+                                                                             fit_range_right,
                                                                              do_convert_to_electrons,
-                                                                             fit_bounds_low, 
+                                                                             fit_bounds_low,
                                                                              fit_bounds_high)
-        
+        except ValueError as exc:
+            raise ValueError(f'EXT {ext + 1}: {exc}') from exc
+
         peak_charge_e_ext.append(peak_charge_e)
         charge_minus_npeak_ext.append(charge_minus_npeak)
         parabola_coeffs.append(parabola_coeff)

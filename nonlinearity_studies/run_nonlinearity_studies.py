@@ -33,8 +33,8 @@ if __name__ == "__main__":
     from stitch_fits import stitch_fits
     from nonlinearity_studies import (
         get_fits,
-        pedestal_subtract,
-        get_zero_one_peaks_ext, 
+        pedestal_subtract_ext_cached,
+        get_zero_one_peaks_ext,
         get_all_peaks_ext, 
         get_nonlinearity_ext, 
         get_nonlinearity_at_ext,
@@ -46,9 +46,9 @@ else:
     # When imported as module, use relative imports
     from .stitch_fits import stitch_fits
     from .nonlinearity_studies import (
-        get_fits, 
-        pedestal_subtract,
-        get_zero_one_peaks_ext, 
+        get_fits,
+        pedestal_subtract_ext_cached,
+        get_zero_one_peaks_ext,
         get_all_peaks_ext, 
         get_nonlinearity_ext, 
         get_nonlinearity_at_ext,
@@ -89,24 +89,54 @@ def _derive_data_path(file_path_str):
 CONFIG_KEYS = {
     'file_string',
     'stitch_fits',
-    'plot_zero_one',
+    'plot_zero_one_adu',
     'plot_all_peaks',
     'get_nonlinearity_at',
     'plot_nonlinearity',
     'save_plots',
-    'output_dir',
+    'save_plot_dir',
     'verbose',
     'nimages',
     'extra_plot_title',
     'peak_finder_widths',
     'peak_finder_buffers',
+    'peak_finder_prominences',
+    'bin_factor',
     'fit_range_right',
     'max_one_peak_sigma_ratio',
     'do_pedestal_subtraction',
     'n_std_to_mask',
     'pedestal_subtraction_axis',
+    'pedsub_cache_dir',
+    'force_pedsub',
     'use_biweight_loc',
-    'use_biweight_midvar'
+    'use_biweight_midvar',
+    'plot_zero_one_individual_figsize',
+    'plot_zero_one_subplots_figsize',
+    'plot_all_peaks_xlim',
+    'plot_all_peaks_ylim',
+    'plot_all_peaks_yscale',
+    'plot_all_peaks_individual_figsize',
+    'plot_all_peaks_subplots_figsize',
+    'plot_nonlinearity_individual_figsize',
+    'plot_nonlinearity_subplots_figsize',
+    'plot_nonlinearity_xlim',
+    'plot_nonlinearity_ylim',
+    'plot_zero_one_individual',
+    'plot_zero_one_together',
+    'plot_all_peaks_individual',
+    'plot_all_peaks_together',
+    'plot_nonlinearity_individual',
+    'plot_nonlinearity_together',
+    'plot_zero_one_electrons',
+    'plot_zero_one_yscale',
+    'show_titles',
+    'plot_zero_one_sharex',
+    'plot_all_peaks_sharex',
+    'plot_nonlinearity_sharex',
+    'plot_zero_one_sharey',
+    'plot_all_peaks_sharey',
+    'plot_nonlinearity_sharey',
 }
 
 def _load_json_config(config_path):
@@ -138,6 +168,31 @@ def _normalize_scalar_or_list(value):
     return value
 
 
+def _parse_lim(raw, n_ext=4):
+    """Convert a raw xlim/ylim arg to 'default', a single tuple, or a list of per-extension tuples.
+
+    Accepts:
+      None                          -> 'default'
+      [l, r]                        -> (l, r)  applied to all extensions
+      [[l1,r1],[l2,r2],...]         -> [(l1,r1), ...] one per extension (JSON format)
+      [l1, r1, l2, r2, ...]         -> [(l1,r1), ...] one per extension (CLI flat format)
+    """
+    if raw is None:
+        return 'default'
+    if isinstance(raw[0], (list, tuple)):
+        if len(raw) != n_ext:
+            raise ValueError(f'Expected {n_ext} [left, right] pairs, got {len(raw)}')
+        return [tuple(pair) for pair in raw]
+    if len(raw) == 2:
+        return tuple(raw)
+    if len(raw) == 2 * n_ext:
+        return [tuple(raw[i*2:(i+1)*2]) for i in range(n_ext)]
+    raise ValueError(
+        f'xlim/ylim must be 2 values (all extensions) or {2*n_ext} values '
+        f'(one [left, right] pair per extension), got {len(raw)}'
+    )
+
+
 def main(args=None):
     """
     The main executable function of the script.
@@ -162,7 +217,7 @@ def main(args=None):
 
     # Get values from argparse arguments
     do_stitch_images = args.stitch_fits
-    do_plot_zero_one_peaks = args.plot_zero_one
+    do_plot_zero_one_peaks = args.plot_zero_one_adu or args.plot_zero_one_electrons
     do_plot_all_peaks = args.plot_all_peaks
     get_nonlinearity_at_charges = args.get_nonlinearity_at
 
@@ -176,7 +231,7 @@ def main(args=None):
     do_get_nonlinearity_at = get_nonlinearity_at_charges is not None
     do_plot_nonlinearity = args.plot_nonlinearity
     save_plots = args.save_plots
-    output_dir = args.output_dir
+    save_plot_dir = args.save_plot_dir
     verbose = args.verbose
     max_one_peak_sigma_ratio = args.max_one_peak_sigma_ratio
 
@@ -211,8 +266,8 @@ def main(args=None):
     else:
         default_fig_path = fits_file_path / 'plots'
 
-    if output_dir is not None:
-        fig_path = Path(output_dir)
+    if save_plot_dir is not None:
+        fig_path = Path(save_plot_dir)
     else:
         fig_path = default_fig_path
 
@@ -230,8 +285,17 @@ def main(args=None):
     # If user specifies pedestal subtraction process, apply to all data before doing analysis
     # This will subtract the average baseline charge of specified axis (row/column) from that axis but keeps the data in ADU
     if args.do_pedestal_subtraction:
-        pedestal_subtracted_data_ext = np.array([pedestal_subtract(data, n_std_to_mask=args.n_std_to_mask, axis=args.pedestal_subtraction_axis, use_biweight_loc=args.use_biweight_loc, use_biweight_midvar=args.use_biweight_midvar) for data in data_ext])
-        data_ext = pedestal_subtracted_data_ext
+        data_ext = pedestal_subtract_ext_cached(
+            data_ext,
+            source_path=fits_file_path,
+            n_std_to_mask=args.n_std_to_mask,
+            axis=args.pedestal_subtraction_axis,
+            use_biweight_loc=args.use_biweight_loc,
+            use_biweight_midvar=args.use_biweight_midvar,
+            cache_dir=args.pedsub_cache_dir,
+            force=args.force_pedsub,
+            verbose=True,
+        )
 
     if not isinstance(fit_range_right_ext, list):
         fit_range_right_ext = [fit_range_right_ext] * len(data_ext)
@@ -262,6 +326,7 @@ def main(args=None):
     counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges = get_all_peaks_ext(data_ext,
                                                                                 widths=args.peak_finder_widths,
                                                                                 buffers=args.peak_finder_buffers,
+                                                                                prominences=args.peak_finder_prominences,
                                                                                 pedestals=pedestals, 
                                                                                 double_gauss_popts=double_gauss_popts,
                                                                                 gains=gains,
@@ -270,7 +335,7 @@ def main(args=None):
                                                                                 do_convert_to_electrons=True,
                                                                                 range_left='default', 
                                                                                 range_right=1500, 
-                                                                                bin_factor=10,
+                                                                                bin_factor=args.bin_factor,
                                                                                 print_values=verbose)
 
     # Fit parabola to nonlinearity curve
@@ -289,77 +354,90 @@ def main(args=None):
 
     # Fit a double gaussian to zero + 1 electron peak in each extension
     if do_plot_zero_one_peaks:
-        plot_zero_one_peaks(data_ext, 
+        plot_zero_one_peaks(data_ext,
                             zero_one_counts_ext,
-                            zero_one_edges_ext, 
-                            pedestals, 
-                            gains, 
-                            double_gauss_popts, 
+                            zero_one_edges_ext,
+                            pedestals,
+                            gains,
+                            double_gauss_popts,
                             zero_one_ranges,
-                            individual_figsize=(7,5), 
-                            subplots_figsize=(10,8),
+                            individual_figsize=tuple(args.plot_zero_one_individual_figsize),
+                            subplots_figsize=tuple(args.plot_zero_one_subplots_figsize),
                             xlim='default',
                             ylim='default',
                             additional_title=f'{args.extra_plot_title}' if args.extra_plot_title else '',
                             suptitle='Double-Gaussian Fit to Zero and One Electron Peaks',
                             nimages=nimages,
-                            yscale='linear',
-                            fontsize=8,
-                            n=100, 
-                            do_convert_to_electrons=True,
-                            plot_individual=False,
-                            plot_together=True,
+                            yscale=args.plot_zero_one_yscale,
+                            fontsize=10,
+                            n=100,
+                            do_plot_adu=args.plot_zero_one_adu,
+                            do_convert_to_electrons=args.plot_zero_one_electrons,
+                            plot_individual=args.plot_zero_one_individual,
+                            plot_together=args.plot_zero_one_together,
+                            sharex=args.plot_zero_one_sharex,
+                            sharey=args.plot_zero_one_sharey,
+                            show_titles=args.show_titles,
                             save_plots=save_plots,
-                            fig_path=str(fig_path), 
-                            file=image_name, 
+                            fig_path=str(fig_path),
+                            file=image_name,
                             dpi=350)
 
     if do_plot_all_peaks:
-        plot_all_peaks_range_left= 1000#np.min(np.array(hist_ranges).flatten())
-        plot_all_peaks_range_right= 1010#np.max(np.array(hist_ranges).flatten())
+        plot_all_peaks_range_left = np.min(np.array(hist_ranges).flatten())
+        plot_all_peaks_range_right = np.max(np.array(hist_ranges).flatten())
+        xlim_all_peaks = tuple(args.plot_all_peaks_xlim) if args.plot_all_peaks_xlim is not None else (plot_all_peaks_range_left, plot_all_peaks_range_right)
+        ylim_all_peaks = tuple(args.plot_all_peaks_ylim) if args.plot_all_peaks_ylim is not None else 'none'
 
-        plot_all_peaks(counts_ext, 
-                    peaks_ext, 
-                    centers_ext,  
-                    xlim=(plot_all_peaks_range_left, plot_all_peaks_range_right),
-                    ylim= (0,30),#'none', 
-                    yscale='linear',
-                    plot_individual=False, 
-                    plot_together=True, 
-                    draw_lines=True, 
-                    linecolor='r', 
+        plot_all_peaks(counts_ext,
+                    peaks_ext,
+                    centers_ext,
+                    xlim=xlim_all_peaks,
+                    ylim=ylim_all_peaks,
+                    yscale=args.plot_all_peaks_yscale,
+                    plot_individual=args.plot_all_peaks_individual,
+                    plot_together=args.plot_all_peaks_together,
+                    sharex=args.plot_all_peaks_sharex,
+                    sharey=args.plot_all_peaks_sharey,
+                    show_titles=args.show_titles,
+                    draw_lines=True,
+                    linecolor='r',
                     linestyle='--',
-                    individual_figsize=(7,6), 
+                    individual_figsize=tuple(args.plot_all_peaks_individual_figsize),
+                    subplots_figsize=tuple(args.plot_all_peaks_subplots_figsize),
                     additional_title=args.extra_plot_title,
                     suptitle='Peaks in Pixel Charge Distribution',
                     nimages=nimages,
                     save_plots=save_plots,
                     fig_path=str(fig_path),
-                    file=image_name, 
-                    dpi=350,)
+                    file=image_name,
+                    dpi=350)
 
     if do_plot_nonlinearity:
         plot_nonlinearity(peaks_ext,
-                        parabola_coeffs, 
-                        peak_charge_e_ext, 
+                        parabola_coeffs,
+                        peak_charge_e_ext,
                         charge_minus_npeak_ext,
                         fit_range_right_ext,
-                        xlim='default', 
-                        ylim='default',
-                        individual_figsize=(6,5), 
-                        subplots_figsize=(9,7),
+                        xlim=_parse_lim(args.plot_nonlinearity_xlim, n_ext=len(data_ext)),
+                        ylim=_parse_lim(args.plot_nonlinearity_ylim, n_ext=len(data_ext)),
+                        individual_figsize=tuple(args.plot_nonlinearity_individual_figsize),
+                        subplots_figsize=tuple(args.plot_nonlinearity_subplots_figsize),
                         additional_title=args.extra_plot_title,
                         suptitle='Pixel Charge Nonlinearity Curve',
                         nimages=nimages,
-                        line_color='r', 
-                        scatter_color='b', 
-                        s=2, 
+                        line_color='r',
+                        scatter_color='b',
+                        s=2,
                         alpha=1,
-                        plot_individual=False, 
-                        plot_together=True, 
-                        save_plots=save_plots, 
-                        fig_path=str(fig_path), 
-                        file=image_name, 
+                        plot_individual=args.plot_nonlinearity_individual,
+                        plot_together=args.plot_nonlinearity_together,
+                        sharex=args.plot_nonlinearity_sharex,
+                        sharey=args.plot_nonlinearity_sharey,
+                        show_titles=args.show_titles,
+                        save_plots=save_plots,
+                        fig_path=str(fig_path),
+                        file=image_name,
                         dpi=350)
         
 
@@ -368,7 +446,7 @@ def init_argparse(args=None):
     Initializes the ArgumentParser object and defines arguments.
     """
     pre_parser = argparse.ArgumentParser(add_help=False)
-    pre_parser.add_argument("-c", "--config", type=str, default=None,
+    pre_parser.add_argument("-j", "--json", dest="config", type=str, default=None,
                             help="Path to JSON file containing command-line arguments")
     pre_args, _ = pre_parser.parse_known_args(args)
 
@@ -392,7 +470,7 @@ You can enable any combination of steps using flags below.""",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    parser.add_argument("-c", "--config", type=str, default=pre_args.config,
+    parser.add_argument("-j", "--json", type=str, default=pre_args.config,
                         help="Path to JSON file containing command-line arguments. Explicit CLI arguments override JSON values.")
     parser.add_argument('file_string', type=str, nargs='?',
                        default=_config_default(config, 'file_string', None),
@@ -402,11 +480,11 @@ You can enable any combination of steps using flags below.""",
                        help="Stitch FITS files by extension")
     parser.add_argument("--no-stitch_fits", dest="stitch_fits", action="store_false",
                        help="Disable FITS stitching when enabled by JSON config")
-    parser.add_argument("-z", "--plot_zero_one", action="store_true",
-                       default=_config_default(config, 'plot_zero_one', False),
-                       help="Plot fits to zero/one electron peaks")
-    parser.add_argument("--no-plot_zero_one", dest="plot_zero_one", action="store_false",
-                       help="Disable zero/one peak plotting when enabled by JSON config")
+    parser.add_argument("-z", "--plot_zero_one_adu", action="store_true",
+                       default=_config_default(config, 'plot_zero_one_adu', False),
+                       help="Plot fits to zero/one electron peaks in ADU. Combined with --plot_zero_one_electrons to also (or only) produce the electron-units version.")
+    parser.add_argument("--no-plot_zero_one_adu", dest="plot_zero_one_adu", action="store_false",
+                       help="Disable ADU zero/one peak plotting when enabled by JSON config")
     parser.add_argument("-a", "--plot_all_peaks", action="store_true",
                        default=_config_default(config, 'plot_all_peaks', False),
                        help="Plot entire charge distribution with line at each peak")
@@ -425,8 +503,8 @@ You can enable any combination of steps using flags below.""",
                        help="Save all plots as jpeg images")
     parser.add_argument("--no-save_plots", dest="save_plots", action="store_false",
                        help="Disable plot saving when enabled by JSON config")
-    parser.add_argument("-o", "--output_dir", type=str,
-                       default=_config_default(config, 'output_dir', None),
+    parser.add_argument("-o", "--save_plot_dir", type=str,
+                       default=_config_default(config, 'save_plot_dir', None),
                        help="Directory to save all plots")
     parser.add_argument("-v", "--verbose", action="store_true",
                        default=_config_default(config, 'verbose', False),
@@ -441,10 +519,16 @@ You can enable any combination of steps using flags below.""",
                         help="Number of images used in the stack. If not provided, extracted from filename for stitched files.")
     parser.add_argument("--peak_finder_widths", nargs='+', type=float,
                        default=_config_default(config, 'peak_finder_widths', [0.9, 0.9, 0.9, 0.9]),
-                        help="Widths for peak finder. Represents maximum width around each peak in e-.")
+                        help="Minimum peak width required by scipy.signal.find_peaks, in units of electrons (internally multiplied by bin_factor to convert to bins). Scalar (applied to all extensions) or one value per extension. Higher = stricter filter on narrow noise spikes.")
     parser.add_argument("--peak_finder_buffers", nargs='+', type=int,
                        default=_config_default(config, 'peak_finder_buffers', [3, 3, 3, 3]),
-                        help="Buffers for peak finder. Used to calculate minimum distance between neighboring peaks by d = nbins_per_electron - buffer. Units are in number of bins.")
+                        help="Buffer (in bins), SUBTRACTED from bin_factor to compute the minimum neighbor-peak distance: d = bin_factor - buffer. With bin_factor=10: buffer=0 -> 10 bins (1 e- spacing, physical), buffer=3 -> 7 bins (~0.7 e-, loose), buffer=-2 -> 12 bins (1.2 e-, strict). Larger buffer = looser, smaller/negative = stricter.")
+    parser.add_argument("--peak_finder_prominences", nargs='+', type=float,
+                       default=_config_default(config, 'peak_finder_prominences', None),
+                        help="Minimum peak prominence required by scipy.signal.find_peaks, in histogram counts (same units as the y-axis of plot_all_peaks). Scalar or one value per extension. None disables the filter. Larger = stricter. Often the most robust filter for separating real electron peaks from noise.")
+    parser.add_argument("--bin_factor", type=int,
+                       default=_config_default(config, 'bin_factor', 10),
+                        help="Number of histogram bins per electron used in the all-peaks histogram. Also controls peak_finder_widths conversion (electrons -> bins) and the buffer math (distance = bin_factor - buffer). Higher = finer resolution but more sensitive to noise.")
     parser.add_argument("--fit_range_right", nargs='+', type=int,
                        default=_config_default(config, 'fit_range_right', 500),
                         help="Charge value in electrons to fit nonlinearity curve up to, can be list of 4 values (one per extension) or integer (used for all extensions)")
@@ -460,13 +544,136 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("--pedestal_subtraction_axis", type=str,
                         default=_config_default(config, 'pedestal_subtraction_axis', 'row'),
                         help="Which axis to compute pedestals across. Options: 'row', 'col', 'row_then_col','col_then_row'")
+    parser.add_argument("--pedsub_cache_dir", type=str,
+                        default=_config_default(config, 'pedsub_cache_dir', None),
+                        help="Directory to store pedestal-subtracted FITS cache. Defaults to same directory as the source FITS.")
+    parser.add_argument("--force_pedsub", action="store_true",
+                        default=_config_default(config, 'force_pedsub', False),
+                        help="Force recomputation of pedestal subtraction, ignoring any existing cache file.")
+    parser.add_argument("--no-force_pedsub", dest="force_pedsub", action="store_false",
+                        help="Use cached pedestal-subtracted data when params match (default)")
     parser.add_argument("--use_biweight_loc", action="store_true",
                         default=_config_default(config, 'use_biweight_loc', True),
                         help="If true, uses Tukey biweight location (more robust - iteratively gets rid of outliers). If false, uses simple average.")
     parser.add_argument("--use_biweight_midvar", action="store_true",
                         default=_config_default(config, 'use_biweight_midvar', True),
                         help="If true, uses Tukey biweight midvariance. If false, uses standard deviation.")
-    
+    parser.add_argument("--plot_zero_one_individual_figsize", nargs=2, type=float,
+                        default=_config_default(config, 'plot_zero_one_individual_figsize', [7, 5]),
+                        metavar=('W', 'H'),
+                        help="Figure size (width height) for individual zero/one peak plots")
+    parser.add_argument("--plot_zero_one_subplots_figsize", nargs=2, type=float,
+                        default=_config_default(config, 'plot_zero_one_subplots_figsize', [10, 8]),
+                        metavar=('W', 'H'),
+                        help="Figure size (width height) for combined 2x2 zero/one peak subplot")
+    parser.add_argument("--plot_all_peaks_xlim", nargs=2, type=float,
+                        default=_config_default(config, 'plot_all_peaks_xlim', None),
+                        metavar=('LEFT', 'RIGHT'),
+                        help="X-axis limits for all-peaks plot. Defaults to full histogram range if not set.")
+    parser.add_argument("--plot_all_peaks_ylim", nargs=2, type=float,
+                        default=_config_default(config, 'plot_all_peaks_ylim', None),
+                        metavar=('BOTTOM', 'TOP'),
+                        help="Y-axis limits for all-peaks plot. Defaults to auto if not set.")
+    parser.add_argument("--plot_all_peaks_yscale", type=str,
+                        default=_config_default(config, 'plot_all_peaks_yscale', 'linear'),
+                        help="Y-axis scale for all-peaks plot. Options: 'linear', 'log'")
+    parser.add_argument("--plot_all_peaks_individual_figsize", nargs=2, type=float,
+                        default=_config_default(config, 'plot_all_peaks_individual_figsize', [7, 6]),
+                        metavar=('W', 'H'),
+                        help="Figure size (width height) for individual all-peaks plots")
+    parser.add_argument("--plot_all_peaks_subplots_figsize", nargs=2, type=float,
+                        default=_config_default(config, 'plot_all_peaks_subplots_figsize', [9, 7]),
+                        metavar=('W', 'H'),
+                        help="Figure size (width height) for combined 2x2 all-peaks subplot")
+    parser.add_argument("--plot_nonlinearity_individual_figsize", nargs=2, type=float,
+                        default=_config_default(config, 'plot_nonlinearity_individual_figsize', [6, 5]),
+                        metavar=('W', 'H'),
+                        help="Figure size (width height) for individual nonlinearity plots")
+    parser.add_argument("--plot_nonlinearity_subplots_figsize", nargs=2, type=float,
+                        default=_config_default(config, 'plot_nonlinearity_subplots_figsize', [9, 7]),
+                        metavar=('W', 'H'),
+                        help="Figure size (width height) for combined 2x2 nonlinearity subplot")
+    parser.add_argument("--plot_nonlinearity_xlim", nargs='+', type=float,
+                        default=_config_default(config, 'plot_nonlinearity_xlim', None),
+                        metavar='VAL',
+                        help="X-axis limits for nonlinearity plot. Provide 2 values (LEFT RIGHT) to apply to all extensions, or 8 values (L1 R1 L2 R2 L3 R3 L4 R4) for per-extension limits. Defaults to auto if not set.")
+    parser.add_argument("--plot_nonlinearity_ylim", nargs='+', type=float,
+                        default=_config_default(config, 'plot_nonlinearity_ylim', None),
+                        metavar='VAL',
+                        help="Y-axis limits for nonlinearity plot. Provide 2 values (BOTTOM TOP) to apply to all extensions, or 8 values (B1 T1 B2 T2 B3 T3 B4 T4) for per-extension limits. Defaults to auto if not set.")
+    parser.add_argument("--plot_zero_one_individual", action="store_true",
+                        default=_config_default(config, 'plot_zero_one_individual', False),
+                        help="Plot zero/one peaks as one figure per extension")
+    parser.add_argument("--no-plot_zero_one_individual", dest="plot_zero_one_individual", action="store_false",
+                        help="Disable individual zero/one peak plots when enabled by JSON config")
+    parser.add_argument("--plot_zero_one_together", action="store_true",
+                        default=_config_default(config, 'plot_zero_one_together', True),
+                        help="Plot zero/one peaks as a combined 2x2 subplot")
+    parser.add_argument("--no-plot_zero_one_together", dest="plot_zero_one_together", action="store_false",
+                        help="Disable combined zero/one peak subplot")
+    parser.add_argument("--plot_all_peaks_individual", action="store_true",
+                        default=_config_default(config, 'plot_all_peaks_individual', False),
+                        help="Plot all-peaks as one figure per extension")
+    parser.add_argument("--no-plot_all_peaks_individual", dest="plot_all_peaks_individual", action="store_false",
+                        help="Disable individual all-peaks plots when enabled by JSON config")
+    parser.add_argument("--plot_all_peaks_together", action="store_true",
+                        default=_config_default(config, 'plot_all_peaks_together', True),
+                        help="Plot all-peaks as a combined 2x2 subplot")
+    parser.add_argument("--no-plot_all_peaks_together", dest="plot_all_peaks_together", action="store_false",
+                        help="Disable combined all-peaks subplot")
+    parser.add_argument("--plot_nonlinearity_individual", action="store_true",
+                        default=_config_default(config, 'plot_nonlinearity_individual', False),
+                        help="Plot nonlinearity as one figure per extension")
+    parser.add_argument("--no-plot_nonlinearity_individual", dest="plot_nonlinearity_individual", action="store_false",
+                        help="Disable individual nonlinearity plots when enabled by JSON config")
+    parser.add_argument("--plot_nonlinearity_together", action="store_true",
+                        default=_config_default(config, 'plot_nonlinearity_together', True),
+                        help="Plot nonlinearity as a combined 2x2 subplot")
+    parser.add_argument("--no-plot_nonlinearity_together", dest="plot_nonlinearity_together", action="store_false",
+                        help="Disable combined nonlinearity subplot")
+    parser.add_argument("--plot_zero_one_electrons", action="store_true",
+                        default=_config_default(config, 'plot_zero_one_electrons', True),
+                        help="Also produce zero/one peak plots converted to electrons (in addition to ADU)")
+    parser.add_argument("--no-plot_zero_one_electrons", dest="plot_zero_one_electrons", action="store_false",
+                        help="Disable the electron-units zero/one peak plots")
+    parser.add_argument("--plot_zero_one_yscale", type=str,
+                        default=_config_default(config, 'plot_zero_one_yscale', 'linear'),
+                        help="Y-axis scale for zero/one peak plots. Options: 'linear', 'log'")
+    parser.add_argument("--show_titles", action="store_true",
+                        default=_config_default(config, 'show_titles', True),
+                        help="Show suptitles and per-axis titles on all plots")
+    parser.add_argument("--no-show_titles", dest="show_titles", action="store_false",
+                        help="Hide all suptitles and per-axis titles")
+    parser.add_argument("--plot_zero_one_sharex", action="store_true",
+                        default=_config_default(config, 'plot_zero_one_sharex', True),
+                        help="Share x-axis range across the 2x2 zero/one peak subplots")
+    parser.add_argument("--no-plot_zero_one_sharex", dest="plot_zero_one_sharex", action="store_false",
+                        help="Allow independent x-axis ranges per zero/one peak subplot")
+    parser.add_argument("--plot_all_peaks_sharex", action="store_true",
+                        default=_config_default(config, 'plot_all_peaks_sharex', True),
+                        help="Share x-axis range across the 2x2 all-peaks subplots")
+    parser.add_argument("--no-plot_all_peaks_sharex", dest="plot_all_peaks_sharex", action="store_false",
+                        help="Allow independent x-axis ranges per all-peaks subplot")
+    parser.add_argument("--plot_nonlinearity_sharex", action="store_true",
+                        default=_config_default(config, 'plot_nonlinearity_sharex', True),
+                        help="Share x-axis range across the 2x2 nonlinearity subplots")
+    parser.add_argument("--no-plot_nonlinearity_sharex", dest="plot_nonlinearity_sharex", action="store_false",
+                        help="Allow independent x-axis ranges per nonlinearity subplot")
+    parser.add_argument("--plot_zero_one_sharey", action="store_true",
+                        default=_config_default(config, 'plot_zero_one_sharey', True),
+                        help="Share y-axis range across the 2x2 zero/one peak subplots")
+    parser.add_argument("--no-plot_zero_one_sharey", dest="plot_zero_one_sharey", action="store_false",
+                        help="Allow independent y-axis ranges per zero/one peak subplot")
+    parser.add_argument("--plot_all_peaks_sharey", action="store_true",
+                        default=_config_default(config, 'plot_all_peaks_sharey', True),
+                        help="Share y-axis range across the 2x2 all-peaks subplots")
+    parser.add_argument("--no-plot_all_peaks_sharey", dest="plot_all_peaks_sharey", action="store_false",
+                        help="Allow independent y-axis ranges per all-peaks subplot")
+    parser.add_argument("--plot_nonlinearity_sharey", action="store_true",
+                        default=_config_default(config, 'plot_nonlinearity_sharey', True),
+                        help="Share y-axis range across the 2x2 nonlinearity subplots")
+    parser.add_argument("--no-plot_nonlinearity_sharey", dest="plot_nonlinearity_sharey", action="store_false",
+                        help="Allow independent y-axis ranges per nonlinearity subplot")
 
     parsed_args = parser.parse_args(args)
 

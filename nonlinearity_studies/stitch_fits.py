@@ -95,6 +95,7 @@ def stitch_fits(file_path, directory='*/', image='avg*.fz', out_path='combined-f
         # reopen with memmap
         hdul = fits.open(str(outname), mode="update", memmap=True)
 
+        print("Stitching images...")
         for i, f in enumerate(files):
 
             with fits.open(f, memmap=True) as infile:
@@ -111,6 +112,7 @@ def stitch_fits(file_path, directory='*/', image='avg*.fz', out_path='combined-f
             if i % 5 == 0:
                 print(f"{i}/{nfiles}")
 
+        print(f"{nfiles}/{nfiles}")
         hdul.close()
         if outname.exists():
             print(f'successfully saved stitched file to {outname}')
