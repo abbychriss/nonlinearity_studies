@@ -304,13 +304,13 @@ The same options can be written in JSON using argparse destination names. A reas
 Then run:
 
 ```bash
-run-nonlinearity-studies -j config/nonlinearity_config.json
+run-nonlinearity-studies -j config/presentation_config.json
 ```
 
 Explicit command-line arguments override JSON values, so this also works:
 
 ```bash
-run-nonlinearity-studies -j config/nonlinearity_config.json --no-save_plots
+run-nonlinearity-studies -j config/presentation_config.json --no-save_plots
 ```
 
 ### Pedestal-subtraction caching
@@ -357,20 +357,26 @@ Each plotting function accepts `plot_individual` and `plot_together` toggles, in
 ## Structure
 
 ```
-nonlinearity_studies/
-├── __init__.py                      # Package initialization
+nonlinearity_studies/                # Repository root
 ├── config/                          # Example JSON configs
-│   └── nonlinearity_config.json
-├── examples/                        # Examples directory (images, scripts, etc)
+│   ├── presentation_config.json
+│   └── report_config.json
+├── examples/                        # Examples directory
+│   └── images/                      # Sample FITS/FZ images
 ├── nonlinearity_studies/            # Main package directory
+│   ├── __init__.py                  # Package initialization
 │   ├── nonlinearity_studies.py      # Core analysis + plotting functions
 │   ├── stitch_fits.py               # FITS image stitching utility
 │   └── run_nonlinearity_studies.py  # Command-line interface
+├── pyproject.toml                   # Build system configuration
 ├── setup.py                         # Package configuration
+├── MANIFEST.in                      # Packaging manifest (non-code files to include)
 ├── environment.yml                  # Conda environment configuration file
 ├── .gitignore                       # File telling git which files not to track
 └── README.md                        # This file
 ```
+
+Generated output (pedestal-subtracted FITS caches, the `plots/` directory, and `*.jpeg`/`*.jpg` figures) is git-ignored and not shown above.
 
 
 ## License
