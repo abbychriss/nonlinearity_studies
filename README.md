@@ -155,7 +155,18 @@ You can also put `file_string` and any option below in a JSON file and run with 
 - `--peak_finder_buffers B [B ...]`: Buffer (in **bins**) SUBTRACTED from `bin_factor` to compute the minimum neighbor-peak distance: `d = bin_factor - buffer`. With the default `bin_factor=10`: `buffer=0` → 10 bins = 1 electron spacing (physical), `buffer=3` → 7 bins ≈ 0.7 electron (loose), `buffer=-2` → 12 bins = 1.2 electron (strict). Larger buffer = looser; smaller/negative = stricter.
 - `--peak_finder_prominences P [P ...]`: Minimum peak prominence in **histogram counts** (same units as the y-axis of `plot_all_peaks`). Scalar, one per extension, or `null` to disable. Often the most robust filter — measures how far a peak sticks up above its surrounding baseline, regardless of width.
 - `--bin_factor N`: Number of histogram bins per electron in the all-peaks histogram (default `10`). Also drives the `peak_finder_widths` electron-to-bin conversion (`width_in_bins = width_in_electrons * bin_factor`) and the buffer math (`distance_in_bins = bin_factor - buffer`). Higher = finer histogram, but small-width/large-buffer values become more permissive.
-- `--fit_range_right CHARGE [CHARGE ...]`: Right charge bound for the parabolic nonlinearity fit (scalar or one per extension)
+- `--fit_range_right CHARGE [CHARGE ...] | auto`: Right charge bound (in electrons) for the parabolic nonlinearity fit. Accepts a single int applied to all extensions, one int per extension (e.g. `600 850 750 1050`), or the literal `auto` to pick it per extension with a data-driven estimator (see `--auto_fit_range_method`).
+- `--auto_fit_range_method {changepoint, var_a, noise_onset}`: Estimator used when `--fit_range_right auto` (default `changepoint`). The nonlinearity curve is a clean parabola up to some charge, then becomes noisy; the goal is to fit only the clean part.
+  - `changepoint` (**default, recommended**): a two-stage, drift-free changepoint detector. It computes *local* roughness (the robust residual scatter of a local quadratic fit in a sliding window), which stays flat through the whole clean parabola regardless of its curvature and steps up sharply at the noise onset; it then refines the exact cut on the points that are guaranteed clean. Immune to the two `var_a` failure modes below.
+  - `var_a`: picks the value minimizing `var(a)` (the variance of the parabola's curvature coefficient, `pcov[0,0]`). Works well when the score curve has a clear minimum, but can fail when the curve is near-linear (score decreases monotonically into the noisy tail) or flat (score collapses to the smallest range).
+  - `noise_onset` (experimental): walks forward and returns the first charge where a rolling MAD exceeds a clean-region baseline.
+- `--changepoint_window N`: (changepoint) window size in peaks for the local-roughness quadratic fit / MAD (default `25`; odd values recommended).
+- `--changepoint_factor FLOAT`: (changepoint) local roughness must exceed `factor × baseline` (or the absolute floor, whichever is larger) to mark the noise onset (default `4.0`; lower = more sensitive).
+- `--changepoint_floor FLOAT`: (changepoint) absolute roughness floor in **electrons** (default `0.15`). Keeps an ultra-quiet early region from setting an impossibly tight threshold that would trip on sub-noise waviness. Sits between clean scatter (~0.02–0.05) and noisy-region roughness (~0.3–0.5); the first knob to revisit if a dataset has very different peak-location noise.
+- `--changepoint_persist N`: (changepoint) number of consecutive points that must exceed the threshold to count as the noise onset (default `4`; higher = more robust to isolated outliers / precursor bumps).
+- `--fit_range_confidence_tol FLOAT`: (changepoint) relative tolerance for the `var(a)` cross-check (default `0.15` = 15%). After estimating each extension, the independent `var(a)` value is computed; extensions where the two disagree by more than this fraction are flagged `LOW` confidence — printed at runtime with a `<-- REVIEW` marker and recorded in `fit_range_estimate.json` in the run's output folder (when `--save_plots`).
+- `--auto_fit_range_tolerance FLOAT` / `--auto_fit_range_max_charge_percentile FLOAT` / `--auto_fit_range_min_peaks_in_fit INT`: (`var_a` method only) optional guards — accept the smallest candidate within `(1+tol)×min_score`, cap candidates at a charge percentile, and reject candidates enclosing too few peaks, respectively.
+- `--noise_onset_window N` / `--noise_onset_factor FLOAT`: (`noise_onset` method only) sliding-window size and the MAD-over-baseline factor for noise onset.
 - `--max_one_peak_sigma_ratio RATIO`: Maximum allowed one-electron peak width relative to the inferred zero-peak width
 
 ##### Plot layout (per plot type)
@@ -213,6 +224,20 @@ run-nonlinearity-studies \
     "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
     --get_nonlinearity_at 10 50 500 1000
 ```
+
+To let the pipeline choose the parabola fit range per extension, pass `--fit_range_right auto`. By default this uses the `changepoint` estimator and cross-checks each result against `var(a)`, printing a confidence label per extension and a warning for any that need review:
+
+```bash
+run-nonlinearity-studies \
+    "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
+    --fit_range_right auto --plot_nonlinearity --save_plots
+```
+```
+EXT 3: changepoint fit_range_right = 693 e-  (var(a) cross-check = 100 e-, rel diff = 86%, confidence = LOW)  <-- REVIEW
+  WARNING: low-confidence fit_range_right on EXT [3] (changepoint and var(a) disagree by > 15%); inspect the nonlinearity plot(s).
+```
+
+With `--save_plots`, the full per-extension estimate (chosen value, cross-check, confidence) is also written to `fit_range_estimate.json` in the run's output folder.
 
 The same options can be written in JSON using argparse destination names. A reasonably complete config might look like:
 
@@ -313,6 +338,8 @@ The cache is **not** automatically invalidated if the source FITS file itself ch
 - `get_zero_one_peaks_ext(data_ext, n=200, fit_bounds='default', zero_one_test_range='auto', max_one_peak_sigma_ratio=1.5)`: Per-extension zero/one peak fits; returns counts, edges, pedestals, gains, double-Gaussian popts, fit ranges
 - `get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, ...)`: Per-extension peak finder
 - `get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_right_ext, ...)`: Per-extension nonlinearity fit
+- `estimate_fit_range_right_changepoint_ext(peaks_ext, centers_ext, pedestals, gains, win=25, factor=4.0, floor=0.15, persist=4, cross_check=True, confidence_rel_tol=0.15, ...)`: Per-extension `fit_range_right` estimate via the default changepoint detector. Returns `(values, diagnostics)`, where `diagnostics` holds the chosen value, the `var(a)` cross-check, and a per-extension `OK`/`LOW` confidence label. (Single-extension core: `estimate_fit_range_right_changepoint`.)
+- `estimate_optimal_fit_range_right_ext(...)` / `estimate_fit_range_right_by_noise_onset_ext(...)`: Alternative `fit_range_right` estimators (`var_a` and experimental `noise_onset`; see `--auto_fit_range_method`).
 - `get_nonlinearity_at_ext(q, parabola_coeffs, parabola_pcovs, fit_range_right_ext)`: Evaluate the parabolic fit at one or more charge values, per extension
 
 ### Plotting Functions

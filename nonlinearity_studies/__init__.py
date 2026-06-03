@@ -26,6 +26,10 @@ from .nonlinearity_studies import (
     plot_zero_one_peaks,
     plot_all_peaks,
     plot_nonlinearity,
+    pedestal_subtract_ext_cached,
+    estimate_optimal_fit_range_right_ext,
+    estimate_fit_range_right_by_noise_onset_ext,
+    estimate_fit_range_right_changepoint_ext,
 )
 
 # Import stitch_fits utility
