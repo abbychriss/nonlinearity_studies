@@ -1224,7 +1224,7 @@ def plot_all_peaks(counts_ext,
         fig, axs = plt.subplots(2,2,figsize=subplots_figsize,constrained_layout=True,sharex=sharex,sharey=sharey)
         axs=axs.flatten()
         if show_titles:
-            fig.suptitle(f'{additional_title}{suptitle}')
+            fig.suptitle(f'{additional_title}{suptitle} (Nimages = {nimages})')
 
         for ext, counts in enumerate(counts_ext):
             peaks=peaks_ext[ext]

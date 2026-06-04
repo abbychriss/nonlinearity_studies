@@ -101,9 +101,7 @@ CONFIG_KEYS = {
     'file_string',
     'stitch_fits',
     'plot_zero_one_adu',
-    'plot_all_peaks',
     'get_nonlinearity_at',
-    'plot_nonlinearity',
     'save_plots',
     'save_plot_dir',
     'verbose',
@@ -200,8 +198,12 @@ def _int_or_auto(s):
 
 # Args that should NOT influence the run-identity hash (operational/output flags only).
 _RUN_HASH_EXCLUDE = {
-    'config', 'json', 'verbose', 'save_plots', 'save_plot_dir',
+    'config', 'json', 'verbose', 'save_plots', 'save_plot_dir', 'show_plots',
     'pedsub_cache_dir', 'force_pedsub',
+    'plot_zero_one_adu', 'plot_zero_one_electrons',
+    'plot_zero_one_individual', 'plot_zero_one_together',
+    'plot_all_peaks_individual', 'plot_all_peaks_together',
+    'plot_nonlinearity_individual', 'plot_nonlinearity_together',
 }
 
 
@@ -260,7 +262,10 @@ def main(args=None):
     """
     if args is None:
         args = init_argparse()
-    
+
+    if not args.show_plots:
+        plt.switch_backend('Agg')
+
     file_path = Path(args.file_string)
 
     if not args.stitch_fits:
@@ -275,7 +280,7 @@ def main(args=None):
     # Get values from argparse arguments
     do_stitch_images = args.stitch_fits
     do_plot_zero_one_peaks = args.plot_zero_one_adu or args.plot_zero_one_electrons
-    do_plot_all_peaks = args.plot_all_peaks
+    do_plot_all_peaks = args.plot_all_peaks_individual or args.plot_all_peaks_together
     get_nonlinearity_at_charges = args.get_nonlinearity_at
 
     # Unpack single value from list for cleaner interface
@@ -297,7 +302,7 @@ def main(args=None):
         fit_range_right_ext = _normalize_scalar_or_list(args.fit_range_right)
 
     do_get_nonlinearity_at = get_nonlinearity_at_charges is not None
-    do_plot_nonlinearity = args.plot_nonlinearity
+    do_plot_nonlinearity = args.plot_nonlinearity_individual or args.plot_nonlinearity_together
     save_plots = args.save_plots
     save_plot_dir = args.save_plot_dir
     verbose = args.verbose
@@ -632,19 +637,9 @@ You can enable any combination of steps using flags below.""",
                        help="Plot fits to zero/one electron peaks in ADU. Combined with --plot_zero_one_electrons to also (or only) produce the electron-units version.")
     parser.add_argument("--no-plot_zero_one_adu", dest="plot_zero_one_adu", action="store_false",
                        help="Disable ADU zero/one peak plotting when enabled by JSON config")
-    parser.add_argument("-a", "--plot_all_peaks", action="store_true",
-                       default=_config_default(config, 'plot_all_peaks', False),
-                       help="Plot entire charge distribution with line at each peak")
-    parser.add_argument("--no-plot_all_peaks", dest="plot_all_peaks", action="store_false",
-                       help="Disable all-peaks plotting when enabled by JSON config")
     parser.add_argument("-g", "--get_nonlinearity_at", nargs='+', type=float,
                        default=_config_default(config, 'get_nonlinearity_at', None),
                        help="Estimate nonlinearity at specified charge value(s) using parabolic fit")
-    parser.add_argument("-n", "--plot_nonlinearity", action="store_true",
-                       default=_config_default(config, 'plot_nonlinearity', False),
-                       help="Plot nonlinearity curve with quadratic fit")
-    parser.add_argument("--no-plot_nonlinearity", dest="plot_nonlinearity", action="store_false",
-                       help="Disable nonlinearity plotting when enabled by JSON config")
     parser.add_argument("-s", "--save_plots", action="store_true",
                        default=_config_default(config, 'save_plots', False),
                        help="Save all plots as jpeg images")
@@ -653,6 +648,11 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("-o", "--save_plot_dir", type=str,
                        default=_config_default(config, 'save_plot_dir', None),
                        help="Directory to save all plots")
+    parser.add_argument("--show_plots", action="store_true",
+                       default=_config_default(config, 'show_plots', True),
+                       help="Display plots interactively via plt.show() (default: True)")
+    parser.add_argument("--no-show_plots", dest="show_plots", action="store_false",
+                       help="Suppress interactive display; useful for batch/headless runs")
     parser.add_argument("-v", "--verbose", action="store_true",
                        default=_config_default(config, 'verbose', False),
                        help="Print verbose output")

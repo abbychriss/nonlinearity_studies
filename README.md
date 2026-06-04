@@ -131,15 +131,15 @@ You can also put `file_string` and any option below in a JSON file and run with 
 - `-f`, `--stitch_fits`: Stitch multi-extension FITS files before analysis
 - `-s`, `--save_plots`: Save generated plots as JPEGs
 - `-o`, `--save_plot_dir DIR`: Output directory for saved plots
+- `--show_plots` / `--no-show_plots`: Display plots interactively via `plt.show()` (default `true`). When disabled, the matplotlib backend is switched to `Agg`, so `plt.show()` becomes a no-op — useful for headless/batch runs.
 - `-v`, `--verbose`: Print verbose output
 - `--nimages N`: Number of stitched images (used for plot labeling). Auto-detected from filenames matching `_N_stitched`
 - `--extra_plot_title TITLE`: Additional title text prepended to every plot title
 
 ##### What to plot
-- `-z`, `--plot_zero_one_adu`: Plot zero/one electron peak fits in ADU
-- `--plot_zero_one_electrons`: Plot zero/one electron peak fits in e- (independent of the ADU flag)
-- `-a`, `--plot_all_peaks`: Plot the full charge distribution with a marker at each peak
-- `-n`, `--plot_nonlinearity`: Plot the nonlinearity curve and parabolic fit
+Each plot type is controlled by its `_individual` and `_together` toggles (see [Plot layout](#plot-layout-per-plot-type)) — a plot is generated whenever either is `true`.
+- `-z`, `--plot_zero_one_adu`: Render the zero/one electron peak fits in ADU (units selector for the zero/one plot)
+- `--plot_zero_one_electrons`: Render the zero/one electron peak fits in e- (independent of the ADU flag)
 - `-g`, `--get_nonlinearity_at CHARGE...`: Evaluate the nonlinearity polynomial at one or more charge values
 
 ##### Pedestal subtraction
@@ -159,7 +159,7 @@ You can also put `file_string` and any option below in a JSON file and run with 
 - `--auto_fit_range_method {changepoint, var_a, noise_onset}`: Estimator used when `--fit_range_right auto` (default `changepoint`). The nonlinearity curve is a clean parabola up to some charge, then becomes noisy; the goal is to fit only the clean part.
   - `changepoint` (**default, recommended**): a two-stage, drift-free changepoint detector. It computes *local* roughness (the robust residual scatter of a local quadratic fit in a sliding window), which stays flat through the whole clean parabola regardless of its curvature and steps up sharply at the noise onset; it then refines the exact cut on the points that are guaranteed clean. Immune to the two `var_a` failure modes below.
   - `var_a`: picks the value minimizing `var(a)` (the variance of the parabola's curvature coefficient, `pcov[0,0]`). Works well when the score curve has a clear minimum, but can fail when the curve is near-linear (score decreases monotonically into the noisy tail) or flat (score collapses to the smallest range).
-  - `noise_onset` (experimental): walks forward and returns the first charge where a rolling MAD exceeds a clean-region baseline.
+  - `noise_onset` (experimental): walks the curve forward and returns the first charge where a rolling median-absolute-deviation of residuals around a local quadratic exceeds `factor × baseline`, where the baseline is the median MAD in the early "safe" region (peaks within the bottom 30% of the above-`min_charge` range). Sensitivity is tuned via `--noise_onset_window` (sliding-window size in peaks; default `30`) and `--noise_onset_factor` (default `2.5`; lower = picks the onset earlier). Note: for globally noisy extensions the baseline MAD itself is elevated, so this estimator can floor well above the true visual onset — `changepoint` is usually preferable.
 - `--changepoint_window N`: (changepoint) window size in peaks for the local-roughness quadratic fit / MAD (default `25`; odd values recommended).
 - `--changepoint_factor FLOAT`: (changepoint) local roughness must exceed `factor × baseline` (or the absolute floor, whichever is larger) to mark the noise onset (default `4.0`; lower = more sensitive).
 - `--changepoint_floor FLOAT`: (changepoint) absolute roughness floor in **electrons** (default `0.15`). Keeps an ultra-quiet early region from setting an impossibly tight threshold that would trip on sub-noise waviness. Sits between clean scatter (~0.02–0.05) and noisy-region roughness (~0.3–0.5); the first knob to revisit if a dataset has very different peak-location noise.
@@ -203,8 +203,8 @@ Next, let's stitch 10 images together from `examples/images/ten-images/` and run
 run-nonlinearity-studies \
     "examples/images/ten-images/*" \
     --stitch_fits \
-    --plot_zero_one_adu \
-    --plot_nonlinearity
+    --plot_zero_one_adu --plot_zero_one_together \
+    --plot_nonlinearity_together
 ```
 
 Now every time we want to analyze the stitched image again, we can pass the stitched image directly into the script (and drop `--stitch_fits`). The pedestal-subtracted result is cached next to the source as `<stem>.pedsub.fits` and reused on subsequent runs if the pedsub params match. Run the stitched image and save the plots:
@@ -247,11 +247,10 @@ The same options can be written in JSON using argparse destination names. A reas
   "stitch_fits": false,
   "save_plots": true,
   "save_plot_dir": null,
+  "show_plots": true,
 
   "plot_zero_one_adu": true,
   "plot_zero_one_electrons": true,
-  "plot_all_peaks": true,
-  "plot_nonlinearity": true,
   "get_nonlinearity_at": 500,
 
   "do_pedestal_subtraction": true,
