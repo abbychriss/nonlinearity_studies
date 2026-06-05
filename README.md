@@ -130,8 +130,9 @@ You can also put `file_string` and any option below in a JSON file and run with 
 - `-j`, `--json PATH`: Load command-line arguments from a JSON config file (CLI arguments override JSON values)
 - `-f`, `--stitch_fits`: Stitch multi-extension FITS files before analysis
 - `-s`, `--save_plots`: Save generated plots as JPEGs
-- `-o`, `--save_plot_dir DIR`: Output directory for saved plots
-- `--show_plots` / `--no-show_plots`: Display plots interactively via `plt.show()` (default `true`). When disabled, the matplotlib backend is switched to `Agg`, so `plt.show()` becomes a no-op — useful for headless/batch runs.
+- `--save_csv`: Save the per-extension summary table as `extension_summary.csv` in the output directory (independent of `--save_plots`)
+- `-o`, `--output_dir DIR`: Directory for all saved output (plots, summary CSV, config snapshot). Defaults to a `plots/` folder alongside the source FITS.
+- `--show_plots` / `--no-show_plots`: Display plots interactively via `plt.show()` (default `true`). When disabled, figures are simply not shown (and are closed to free memory) instead of switching matplotlib to a non-interactive backend — useful for headless/batch runs, and still works alongside `--save_plots`.
 - `-v`, `--verbose`: Print verbose output
 - `--nimages N`: Number of stitched images (used for plot labeling). Auto-detected from filenames matching `_N_stitched`
 - `--extra_plot_title TITLE`: Additional title text prepended to every plot title
@@ -141,6 +142,9 @@ Each plot type is controlled by its `_individual` and `_together` toggles (see [
 - `-z`, `--plot_zero_one_adu`: Render the zero/one electron peak fits in ADU (units selector for the zero/one plot)
 - `--plot_zero_one_electrons`: Render the zero/one electron peak fits in e- (independent of the ADU flag)
 - `-g`, `--get_nonlinearity_at CHARGE...`: Evaluate the nonlinearity polynomial at one or more charge values
+
+##### Per-extension summary table
+Every run prints a per-extension summary table to stdout (no flag required) with the **gain** in ADU/e- (the separation between the zero- and one-electron peaks from the double-Gaussian fit), the **noise** in e- (the standard deviation of the zero-electron peak, converted from ADU to electrons by dividing by the gain), and one **nonlinearity** column per charge passed to `--get_nonlinearity_at` (falling back to 500 e- when none is given). With `--save_csv`, the same table is written as a CSV (`extension_summary.csv`) in the output directory — one row per extension with a header row, ready to load with `numpy.genfromtxt(..., delimiter=',', names=True)` or `numpy.loadtxt(..., delimiter=',', skiprows=1)`.
 
 ##### Pedestal subtraction
 - `--do_pedestal_subtraction` / `--no-do_pedestal_subtraction`: Toggle pedestal subtraction (default `true`)
@@ -194,7 +198,7 @@ For the first example, we will fit the zero and one electron peaks for a single 
 ```bash
 run-nonlinearity-studies \
     "examples/images/ten-images/avg_img_CV_250x3500x500_bin1x1_125_20260317_213403_0.fz" \
-    --plot_zero_one_adu
+    --plot_zero_one_adu --plot_zero_one_together
 ```
 
 Next, let's stitch 10 images together from `examples/images/ten-images/` and run the analysis script on the stitched output:
@@ -212,8 +216,8 @@ Now every time we want to analyze the stitched image again, we can pass the stit
 ```bash
 run-nonlinearity-studies \
     "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
-    --plot_zero_one_adu --plot_zero_one_electrons \
-    --plot_nonlinearity \
+    --plot_zero_one_adu --plot_zero_one_electrons --plot_zero_one_together \
+    --plot_nonlinearity_together \
     --save_plots
 ```
 
@@ -230,7 +234,7 @@ To let the pipeline choose the parabola fit range per extension, pass `--fit_ran
 ```bash
 run-nonlinearity-studies \
     "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
-    --fit_range_right auto --plot_nonlinearity --save_plots
+    --fit_range_right auto --plot_nonlinearity_together --save_plots
 ```
 ```
 EXT 3: changepoint fit_range_right = 693 e-  (var(a) cross-check = 100 e-, rel diff = 86%, confidence = LOW)  <-- REVIEW
@@ -246,7 +250,8 @@ The same options can be written in JSON using argparse destination names. A reas
   "file_string": "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits",
   "stitch_fits": false,
   "save_plots": true,
-  "save_plot_dir": null,
+  "save_csv": true,
+  "output_dir": null,
   "show_plots": true,
 
   "plot_zero_one_adu": true,
@@ -340,10 +345,11 @@ The cache is **not** automatically invalidated if the source FITS file itself ch
 - `estimate_fit_range_right_changepoint_ext(peaks_ext, centers_ext, pedestals, gains, win=25, factor=4.0, floor=0.15, persist=4, cross_check=True, confidence_rel_tol=0.15, ...)`: Per-extension `fit_range_right` estimate via the default changepoint detector. Returns `(values, diagnostics)`, where `diagnostics` holds the chosen value, the `var(a)` cross-check, and a per-extension `OK`/`LOW` confidence label. (Single-extension core: `estimate_fit_range_right_changepoint`.)
 - `estimate_optimal_fit_range_right_ext(...)` / `estimate_fit_range_right_by_noise_onset_ext(...)`: Alternative `fit_range_right` estimators (`var_a` and experimental `noise_onset`; see `--auto_fit_range_method`).
 - `get_nonlinearity_at_ext(q, parabola_coeffs, parabola_pcovs, fit_range_right_ext)`: Evaluate the parabolic fit at one or more charge values, per extension
+- `summarize_extensions(gains, double_gauss_popts, parabola_coeffs, nonlinearity_charges=500, save_path=None)`: Print the per-extension summary table of gain (ADU/e-), noise (e-), and nonlinearity at one or more charges (`nonlinearity_charges` accepts a scalar or list); writes it as CSV when `save_path` is given. Returns the summary rows. (Builders: `build_extension_summary` returns `(rows, charges)` as dicts; `format_extension_summary(rows, charges)` turns them into the printable table string.)
 
 ### Plotting Functions
 
-Each plotting function accepts `plot_individual` and `plot_together` toggles, individual + 2×2 figure sizes, `sharex`/`sharey` for the 2×2 grid, `show_titles`, and `save_plots`/`fig_path` for output.
+Each plotting function accepts `plot_individual` and `plot_together` toggles, individual + 2×2 figure sizes, `sharex`/`sharey` for the 2×2 grid, `show_titles`, `show_plots` (display interactively, or close the figure when `False`), and `save_plots`/`fig_path` for output.
 
 - `plot_zero_one_peaks(data_ext, zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges, do_plot_adu=True, do_convert_to_electrons=False, yscale='linear', ...)`: Visualize zero/one electron peak fits in ADU and/or electrons.
 - `plot_all_peaks(counts_ext, peaks_ext, centers_ext, xlim, ylim='none', yscale='log', draw_lines=True, ...)`: Visualize the full charge distribution with a marker at each identified peak.

@@ -46,8 +46,9 @@ if __name__ == "__main__":
         estimate_fit_range_right_by_noise_onset_ext,
         estimate_fit_range_right_changepoint_ext,
         get_nonlinearity_at_ext,
-        plot_zero_one_peaks, 
-        plot_all_peaks, 
+        summarize_extensions,
+        plot_zero_one_peaks,
+        plot_all_peaks,
         plot_nonlinearity
     )
 else:
@@ -63,8 +64,9 @@ else:
         estimate_fit_range_right_by_noise_onset_ext,
         estimate_fit_range_right_changepoint_ext,
         get_nonlinearity_at_ext,
-        plot_zero_one_peaks, 
-        plot_all_peaks, 
+        summarize_extensions,
+        plot_zero_one_peaks,
+        plot_all_peaks,
         plot_nonlinearity
     )
 
@@ -103,7 +105,9 @@ CONFIG_KEYS = {
     'plot_zero_one_adu',
     'get_nonlinearity_at',
     'save_plots',
-    'save_plot_dir',
+    'save_csv',
+    'output_dir',
+    'show_plots',
     'verbose',
     'nimages',
     'extra_plot_title',
@@ -198,7 +202,7 @@ def _int_or_auto(s):
 
 # Args that should NOT influence the run-identity hash (operational/output flags only).
 _RUN_HASH_EXCLUDE = {
-    'config', 'json', 'verbose', 'save_plots', 'save_plot_dir', 'show_plots',
+    'config', 'json', 'verbose', 'save_plots', 'save_csv', 'output_dir', 'show_plots',
     'pedsub_cache_dir', 'force_pedsub',
     'plot_zero_one_adu', 'plot_zero_one_electrons',
     'plot_zero_one_individual', 'plot_zero_one_together',
@@ -263,9 +267,6 @@ def main(args=None):
     if args is None:
         args = init_argparse()
 
-    if not args.show_plots:
-        plt.switch_backend('Agg')
-
     file_path = Path(args.file_string)
 
     if not args.stitch_fits:
@@ -304,7 +305,8 @@ def main(args=None):
     do_get_nonlinearity_at = get_nonlinearity_at_charges is not None
     do_plot_nonlinearity = args.plot_nonlinearity_individual or args.plot_nonlinearity_together
     save_plots = args.save_plots
-    save_plot_dir = args.save_plot_dir
+    save_csv = args.save_csv
+    output_dir = args.output_dir
     verbose = args.verbose
     max_one_peak_sigma_ratio = args.max_one_peak_sigma_ratio
 
@@ -339,8 +341,8 @@ def main(args=None):
     else:
         default_fig_path = fits_file_path / 'plots'
 
-    if save_plot_dir is not None:
-        fig_path = Path(save_plot_dir)
+    if output_dir is not None:
+        fig_path = Path(output_dir)
     else:
         fig_path = default_fig_path
 
@@ -496,10 +498,20 @@ def main(args=None):
                                                                                                         fit_bounds_low=-100, 
                                                                                                         fit_bounds_high=100)
 
+    # Per-extension summary table: gain (ADU/e-), noise (e-), and nonlinearity at the same
+    # charge(s) requested via --get_nonlinearity_at (falling back to 500 e- when none given).
+    summary_charges = get_nonlinearity_at_charges if get_nonlinearity_at_charges is not None else 500
+    summarize_extensions(
+        gains,
+        double_gauss_popts,
+        parabola_coeffs,
+        nonlinearity_charges=summary_charges,
+        save_path=(fig_path / 'extension_summary.csv') if save_csv else None,
+    )
+
     # Get nonlinearity at specified charge value(s)
     if do_get_nonlinearity_at:
-        get_nonlinearity_at_ext(get_nonlinearity_at_charges, parabola_coeffs, parabola_pcovs, fit_range_right_ext,
-                                save_path=fig_path / 'get_nonlinearity_at.txt')
+        get_nonlinearity_at_ext(get_nonlinearity_at_charges, parabola_coeffs, parabola_pcovs, fit_range_right_ext)
 
     # Fit a double gaussian to zero + 1 electron peak in each extension
     if do_plot_zero_one_peaks:
@@ -528,6 +540,7 @@ def main(args=None):
                             sharey=args.plot_zero_one_sharey,
                             show_titles=args.show_titles,
                             save_plots=save_plots,
+                            show_plots=args.show_plots,
                             fig_path=str(fig_path),
                             file=image_name,
                             dpi=350)
@@ -561,6 +574,7 @@ def main(args=None):
                     suptitle='Peaks in Pixel Charge Distribution',
                     nimages=nimages,
                     save_plots=save_plots,
+                    show_plots=args.show_plots,
                     fig_path=str(fig_path),
                     file=image_name,
                     dpi=350)
@@ -588,6 +602,7 @@ def main(args=None):
                         sharey=args.plot_nonlinearity_sharey,
                         show_titles=args.show_titles,
                         save_plots=save_plots,
+                        show_plots=args.show_plots,
                         fig_path=str(fig_path),
                         file=image_name,
                         dpi=350)
@@ -645,9 +660,14 @@ You can enable any combination of steps using flags below.""",
                        help="Save all plots as jpeg images")
     parser.add_argument("--no-save_plots", dest="save_plots", action="store_false",
                        help="Disable plot saving when enabled by JSON config")
-    parser.add_argument("-o", "--save_plot_dir", type=str,
-                       default=_config_default(config, 'save_plot_dir', None),
-                       help="Directory to save all plots")
+    parser.add_argument("--save_csv", action="store_true",
+                       default=_config_default(config, 'save_csv', False),
+                       help="Save the per-extension summary table as a CSV (extension_summary.csv) in the output directory")
+    parser.add_argument("--no-save_csv", dest="save_csv", action="store_false",
+                       help="Disable summary CSV saving when enabled by JSON config")
+    parser.add_argument("-o", "--output_dir", type=str,
+                       default=_config_default(config, 'output_dir', None),
+                       help="Directory for all saved output (plots, summary CSV, config snapshot). Defaults to a 'plots/' folder alongside the source FITS.")
     parser.add_argument("--show_plots", action="store_true",
                        default=_config_default(config, 'show_plots', True),
                        help="Display plots interactively via plt.show() (default: True)")
@@ -665,7 +685,7 @@ You can enable any combination of steps using flags below.""",
                        default=_config_default(config, 'nimages', None),
                         help="Number of images used in the stack. If not provided, extracted from filename for stitched files.")
     parser.add_argument("--peak_finder_widths", nargs='+', type=float,
-                       default=_config_default(config, 'peak_finder_widths', [0.9, 0.9, 0.9, 0.9]),
+                       default=_config_default(config, 'peak_finder_widths', [0.1, 0.1, 0.1, 0.1]),
                         help="Minimum peak width required by scipy.signal.find_peaks, in units of electrons (internally multiplied by bin_factor to convert to bins). Scalar (applied to all extensions) or one value per extension. Higher = stricter filter on narrow noise spikes.")
     parser.add_argument("--peak_finder_buffers", nargs='+', type=int,
                        default=_config_default(config, 'peak_finder_buffers', [3, 3, 3, 3]),

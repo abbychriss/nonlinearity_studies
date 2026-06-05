@@ -22,6 +22,8 @@ build/
 
 # Project specific
 combined-fits/
+stitched-fits/
 plots/
 *.jpeg
 *.jpg
+*.pedsub.fits

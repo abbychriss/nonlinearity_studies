@@ -5,6 +5,7 @@ from astropy.stats import biweight_location, biweight_midvariance
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks as scipy_find_peaks
 import math
+import csv
 
 from pathlib import Path
 from glob import glob
@@ -837,6 +838,17 @@ def get_nonlinearity_at(q, parabola_coeff, parabola_pcov=None, fit_range_right=N
 
 #---------------- PLOTTING FUNCTIONS ----------------------------
 
+def _finish_fig(show_plots):
+    """Display the current figure interactively, or close it to free memory when not showing.
+
+    Gating plt.show() this way keeps the active (GUI) backend intact, so disabling display
+    doesn't trip matplotlib's "non-interactive backend cannot show the figure" warning.
+    """
+    if show_plots:
+        plt.show()
+    else:
+        plt.close()
+
 #---------------- Plot zero-one peaks  -----------------------
 # Usage: for plotting zero-one electron peaks from each extension on same subplot or individually by extension.
 # Input data is list of 2D pixel charge arrays from all 4 extensions.
@@ -868,6 +880,7 @@ def plot_zero_one_peaks(data_ext,
                         sharey=True,
                         show_titles=True,
                         save_plots=False,
+                        show_plots=True,
                         fig_path='./', file='zero_one_peaks',
                         dpi=350):
 
@@ -931,7 +944,7 @@ def plot_zero_one_peaks(data_ext,
                 output_path = fig_name.with_stem(fig_name.stem + f'_EXT{ext+1}').with_suffix('.jpeg')
                 plt.savefig(str(output_path), dpi=dpi)
                 print(f'Saved plots to {output_path}')
-            plt.show()
+            _finish_fig(show_plots)
 
         if do_convert_to_electrons:
             for ext, data in enumerate(data_ext):
@@ -987,7 +1000,7 @@ def plot_zero_one_peaks(data_ext,
                     output_path = fig_name.with_stem(fig_name.stem + f'_electrons_EXT{ext+1}').with_suffix('.jpeg')
                     plt.savefig(str(output_path), dpi=dpi)
                     print(f'Saved plot to {output_path}')
-                plt.show()
+                _finish_fig(show_plots)
 
     if plot_together:
 
@@ -1067,7 +1080,7 @@ def plot_zero_one_peaks(data_ext,
                 output_path = fig_name.with_suffix('.jpeg')
                 plt.savefig(str(output_path), dpi=dpi)
                 print(f'Saved plot to {output_path}')
-            plt.show()
+            _finish_fig(show_plots)
 
         if do_convert_to_electrons:
             fig, axs = plt.subplots(2, 2, figsize=subplots_figsize, constrained_layout=True, sharex=sharex, sharey=sharey)
@@ -1147,7 +1160,7 @@ def plot_zero_one_peaks(data_ext,
                 output_path = fig_name.with_stem(fig_name.stem + '_electrons').with_suffix('.jpeg')
                 plt.savefig(str(output_path), dpi=dpi)
                 print(f'Saved plot to {output_path}')
-            plt.show()
+            _finish_fig(show_plots)
 
 
 #---------------- Plot all electron peaks ----------------------------
@@ -1169,7 +1182,8 @@ def plot_all_peaks(counts_ext,
                    sharey=True,
                    show_titles=True,
                    save_plots=False,
-                   fig_path='./', file='peak_finder', 
+                   show_plots=True,
+                   fig_path='./', file='peak_finder',
                    dpi=350):
 
     fig_path = Path(fig_path)
@@ -1218,7 +1232,7 @@ def plot_all_peaks(counts_ext,
                 output_path = fig_name.with_stem(fig_name.stem + f'_EXT{ext+1}').with_suffix('.jpeg')
                 plt.savefig(str(output_path), dpi=dpi)
                 print(f'Saved plot to {output_path}')
-            plt.show()
+            _finish_fig(show_plots)
 
     if plot_together:
         fig, axs = plt.subplots(2,2,figsize=subplots_figsize,constrained_layout=True,sharex=sharex,sharey=sharey)
@@ -1270,7 +1284,7 @@ def plot_all_peaks(counts_ext,
             output_path = fig_name.with_suffix('.jpeg')
             plt.savefig(str(output_path), dpi=dpi)
             print(f'Saved plot to {output_path}')
-        plt.show()
+        _finish_fig(show_plots)
 
 
 #---------------- Plot nonlinearity ----------------------------
@@ -1295,7 +1309,8 @@ def plot_nonlinearity(peaks_ext,
                       sharey=True,
                       show_titles=True,
                       save_plots=False,
-                      fig_path='./', file='nonlinearity_curve', 
+                      show_plots=True,
+                      fig_path='./', file='nonlinearity_curve',
                       dpi=350):
 
     fig_path = Path(fig_path)
@@ -1344,7 +1359,7 @@ def plot_nonlinearity(peaks_ext,
                 output_path = fig_name.with_stem(fig_name.stem + f'_EXT{ext+1}').with_suffix('.jpeg')
                 plt.savefig(str(output_path), dpi=dpi)
                 print(f'Saved plot to {output_path}')
-            plt.show()
+            _finish_fig(show_plots)
 
     if plot_together:
         fig, axs = plt.subplots(2, 2, figsize=subplots_figsize, constrained_layout=True, sharex=sharex, sharey=sharey)
@@ -1391,7 +1406,7 @@ def plot_nonlinearity(peaks_ext,
             output_path = fig_name.with_suffix('.jpeg')
             plt.savefig(str(output_path), dpi=dpi)
             print(f'Saved plot to {output_path}')
-        plt.show()
+        _finish_fig(show_plots)
 
 
 #---------------- UTILITY FUNCTIONS ----------------------------
@@ -1577,6 +1592,89 @@ def get_nonlinearity_at_ext(q, parabola_coeffs, parabola_pcovs, fit_range_right_
         print(f'Saved nonlinearity-at-charge text output to {save_path}')
 
     return nonlinearity_at_q_ext
+
+def _normalize_charges(nonlinearity_charges):
+    """Return nonlinearity_charges as a flat list of floats (accepts a scalar or a list)."""
+    if nonlinearity_charges is None:
+        return []
+    if isinstance(nonlinearity_charges, (list, tuple, np.ndarray)):
+        return [float(q) for q in nonlinearity_charges]
+    return [float(nonlinearity_charges)]
+
+def _nonlin_column_name(charge):
+    """CSV/column name for the nonlinearity evaluated at a charge, e.g. 'nonlinearity_at_500_e'."""
+    return f'nonlinearity_at_{charge:g}_e'
+
+def build_extension_summary(gains, double_gauss_popts, parabola_coeffs, nonlinearity_charges=500):
+    """Build a per-extension summary of gain, noise in electrons, and nonlinearity at charge(s).
+
+    Args:
+        gains: list of per-extension gains (ADU/e-), i.e. m1 - m0 from the double-Gaussian fit.
+        double_gauss_popts: list of per-extension double-Gaussian popts (s0, m0, s1, m1, N0, N1).
+            s0 (popt[0]) is the standard deviation of the zero-electron peak in ADU.
+        parabola_coeffs: list of per-extension parabola coefficients (a, b, c) from the
+            nonlinearity fit.
+        nonlinearity_charges: charge or list of charges (in e-) at which to evaluate the
+            nonlinearity (default 500).
+
+    Returns:
+        (rows, charges) where charges is the normalized list of charges, and rows is a list of
+        dicts (one per extension) with flat keys:
+          'ext', 'gain_adu_per_e', 'noise_e', and one 'nonlinearity_at_<charge>_e' per charge.
+    """
+    charges = _normalize_charges(nonlinearity_charges)
+    rows = []
+    for ext, gain in enumerate(gains):
+        noise_adu = double_gauss_popts[ext][0]  # s0: std of zero-electron peak in ADU
+        noise_e = noise_adu / gain  # convert ADU -> e- by dividing by gain (ADU/e-)
+        a, b, c = parabola_coeffs[ext]
+        row = {
+            'ext': ext + 1,
+            'gain_adu_per_e': gain,
+            'noise_e': noise_e,
+        }
+        for q in charges:
+            row[_nonlin_column_name(q)] = a * q**2 + b * q + c
+        rows.append(row)
+    return rows, charges
+
+def _summary_fieldnames(charges):
+    return ['ext', 'gain_adu_per_e', 'noise_e'] + [_nonlin_column_name(q) for q in charges]
+
+def format_extension_summary(rows, charges):
+    """Format per-extension summary rows (from build_extension_summary) as an aligned table string."""
+    headers = ['EXT', 'Gain [ADU/e-]', 'Noise [e-]'] + [f'Nonlin @ {q:g} e- [e-]' for q in charges]
+    fields = _summary_fieldnames(charges)
+    cells = [[f'{r[f]:.4f}' if f != 'ext' else f'{r[f]}' for f in fields] for r in rows]
+    widths = [max(len(h), *(len(row[i]) for row in cells)) if cells else len(h)
+              for i, h in enumerate(headers)]
+    fmt = lambda vals: '  '.join(v.rjust(widths[i]) for i, v in enumerate(vals))
+    lines = [fmt(headers), '-' * (sum(widths) + 2 * (len(widths) - 1))]
+    lines += [fmt(row) for row in cells]
+    return '\n'.join(lines)
+
+def summarize_extensions(gains, double_gauss_popts, parabola_coeffs, nonlinearity_charges=500,
+                         save_path=None):
+    """Print a per-extension table of gain, noise in e-, and nonlinearity, and optionally save it as CSV.
+
+    Returns the list of summary rows from build_extension_summary.
+    """
+    rows, charges = build_extension_summary(gains, double_gauss_popts, parabola_coeffs, nonlinearity_charges)
+    print('\n***********************************************************')
+    print('\nPer-extension summary:\n')
+    print(format_extension_summary(rows, charges))
+
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fieldnames = _summary_fieldnames(charges)
+        with save_path.open('w', encoding='utf-8', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        print(f'\nSaved per-extension summary table (CSV) to {save_path}')
+
+    return rows
 
 #---------------- Curves ----------------------------
 def double_gauss(x, s0, m0, s1, m1, N0, N1):
