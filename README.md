@@ -229,19 +229,20 @@ run-nonlinearity-studies \
     --get_nonlinearity_at 10 50 500 1000
 ```
 
-To let the pipeline choose the parabola fit range per extension, pass `--fit_range_right auto`. By default this uses the `changepoint` estimator and cross-checks each result against `var(a)`, printing a confidence label per extension and a warning for any that need review:
+To let the pipeline choose the parabola fit range per extension, pass `--fit_range_right auto`. This uses the `changepoint` estimator and cross-checks each result against `var(a)` to assign a per-extension confidence label:
 
 ```bash
 run-nonlinearity-studies \
     "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
     --fit_range_right auto --plot_nonlinearity_together --save_plots
 ```
+
+With `--save_plots`, the full per-extension estimate (chosen value, cross-check, confidence) is written to `fit_range_estimate.json` in the run's output folder. Add `--verbose` to also print the confidence label per extension and a warning for any that need review:
+
 ```
 EXT 3: changepoint fit_range_right = 693 e-  (var(a) cross-check = 100 e-, rel diff = 86%, confidence = LOW)  <-- REVIEW
   WARNING: low-confidence fit_range_right on EXT [3] (changepoint and var(a) disagree by > 15%); inspect the nonlinearity plot(s).
 ```
-
-With `--save_plots`, the full per-extension estimate (chosen value, cross-check, confidence) is also written to `fit_range_estimate.json` in the run's output folder.
 
 The same options can be written in JSON using argparse destination names. A reasonably complete config might look like:
 
