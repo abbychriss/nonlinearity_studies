@@ -1,0 +1,35 @@
+{
+    "study_name": "VR",
+    "x_label": "VR (V)",
+    "invert_x": true,
+    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies",
+    "series_label": "deltaV",
+    "plot_individual": true,
+    "plot_together": true,
+    "quantities": {
+        "gain_adu_per_e": {
+            "ylabel": "Gain (ADU/e-)",
+            "title": "Gain vs VR",
+            "fit_line": true
+        },
+        "noise_e": {
+            "ylabel": "Noise (e-)",
+            "title": "Noise vs VR",
+            "fit_line": false
+        },
+        "nonlinearity_at_500_e": {
+            "ylabel": "Nonlinearity at 500 e- (e-)",
+            "title": "Nonlinearity at 500 e- vs VR",
+            "fit_line": false
+        }
+    },
+    "datasets": [
+        {"x": -3, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-3/ten-images/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_3deadef8/extension_summary.csv"},
+        {"x": -4, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-4/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_ad841c6d/extension_summary.csv"},
+        {"x": -5, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-5/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_213b37c2/extension_summary.csv"},
+        {"x": -6, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-6/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_dbec0ad2/extension_summary.csv"},
+        {"x": -7, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-7/plots/cds_avg_img_L2_250x3500x500_1x1_L2_124_12_stitched_0392c058/extension_summary.csv"},
+        {"x": -8, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-8/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_836d8173/extension_summary.csv"},
+        {"x": -9, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-9/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_30fff068/extension_summary.csv"}
+    ]
+}
