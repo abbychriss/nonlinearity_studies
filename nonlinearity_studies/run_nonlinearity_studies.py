@@ -45,7 +45,6 @@ if __name__ == "__main__":
         estimate_optimal_fit_range_right_ext,
         estimate_fit_range_right_by_noise_onset_ext,
         estimate_fit_range_right_changepoint_ext,
-        get_nonlinearity_at_ext,
         summarize_extensions,
         plot_zero_one_peaks,
         plot_all_peaks,
@@ -63,7 +62,6 @@ else:
         estimate_optimal_fit_range_right_ext,
         estimate_fit_range_right_by_noise_onset_ext,
         estimate_fit_range_right_changepoint_ext,
-        get_nonlinearity_at_ext,
         summarize_extensions,
         plot_zero_one_peaks,
         plot_all_peaks,
@@ -125,9 +123,9 @@ CONFIG_KEYS = {
     'changepoint_floor',
     'changepoint_persist',
     'fit_range_confidence_tol',
-    'max_one_peak_sigma_ratio',
     'do_pedestal_subtraction',
     'n_std_to_mask',
+    'pedsub_max_iter',
     'pedestal_subtraction_axis',
     'pedsub_cache_dir',
     'force_pedsub',
@@ -267,6 +265,11 @@ def main(args=None):
     if args is None:
         args = init_argparse()
 
+    # If a non-empty extra_plot_title doesn't already end with a separator,
+    # append ": " so it reads cleanly before the default title.
+    if args.extra_plot_title and not args.extra_plot_title.endswith((' ', '\n')):
+        args.extra_plot_title = f'{args.extra_plot_title}: '
+
     file_path = Path(args.file_string)
 
     if not args.stitch_fits:
@@ -302,13 +305,11 @@ def main(args=None):
     else:
         fit_range_right_ext = _normalize_scalar_or_list(args.fit_range_right)
 
-    do_get_nonlinearity_at = get_nonlinearity_at_charges is not None
     do_plot_nonlinearity = args.plot_nonlinearity_individual or args.plot_nonlinearity_together
     save_plots = args.save_plots
     save_csv = args.save_csv
     output_dir = args.output_dir
     verbose = args.verbose
-    max_one_peak_sigma_ratio = args.max_one_peak_sigma_ratio
 
     stitched_dir_name = 'stitched-fits'
 
@@ -339,7 +340,7 @@ def main(args=None):
         base_path = Path(*fits_file_path.parts[:stitched_fits_idx])
         default_fig_path = base_path / 'plots'
     else:
-        default_fig_path = fits_file_path / 'plots'
+        default_fig_path = fits_file_path.parent / 'plots'
 
     if output_dir is not None:
         fig_path = Path(output_dir)
@@ -382,9 +383,10 @@ def main(args=None):
             axis=args.pedestal_subtraction_axis,
             use_biweight_loc=args.use_biweight_loc,
             use_biweight_midvar=args.use_biweight_midvar,
+            max_iter=args.pedsub_max_iter,
             cache_dir=args.pedsub_cache_dir,
             force=args.force_pedsub,
-            verbose=True,
+            verbose=verbose,
         )
 
     if fit_range_right_ext != 'auto':
@@ -397,11 +399,14 @@ def main(args=None):
             )
             sys.exit(1)
 
-    # Extract number of stitched images from filename; --nimages arg or config overrides
+    # Extract number of stitched images from filename; --nimages arg or config overrides.
+    # A single, unstitched image carries no count in its name -> it is exactly one image.
     nimages = None
     match = re.search(r'_(\d+)_stitched', fits_path)
     if match:
         nimages = int(match.group(1))
+    elif stitched_dir_name not in fits_file_path.parts:
+        nimages = 1
     if args.nimages is not None:
         nimages = args.nimages
 
@@ -410,7 +415,6 @@ def main(args=None):
         data_ext,
         n=100,
         fit_bounds='default',
-        max_one_peak_sigma_ratio=max_one_peak_sigma_ratio,
     )
 
     # Apply scipy peak finder to find location of every electron peak
@@ -432,40 +436,46 @@ def main(args=None):
     fit_range_diagnostics = None
     if fit_range_right_ext == 'auto':
         if args.auto_fit_range_method == 'noise_onset':
-            print(f'\nEstimating fit_range_right via noise-onset detection (window={args.noise_onset_window}, factor={args.noise_onset_factor})...')
+            if verbose:
+                print(f'\nEstimating fit_range_right via noise-onset detection (window={args.noise_onset_window}, factor={args.noise_onset_factor})...')
             fit_range_right_ext = estimate_fit_range_right_by_noise_onset_ext(
                 peaks_ext, centers_ext, pedestals, gains,
                 do_convert_to_electrons=False,
                 window=args.noise_onset_window, factor=args.noise_onset_factor,
+                verbose=verbose,
             )
         elif args.auto_fit_range_method == 'var_a':
-            print('\nEstimating optimal fit_range_right per extension (var_a)...')
-            if args.auto_fit_range_tolerance is not None:
-                print(f'  tolerance = {args.auto_fit_range_tolerance}')
-            if args.auto_fit_range_max_charge_percentile is not None:
-                print(f'  max_charge_percentile = {args.auto_fit_range_max_charge_percentile}')
-            if args.auto_fit_range_min_peaks_in_fit is not None:
-                print(f'  min_peaks_in_fit = {args.auto_fit_range_min_peaks_in_fit}')
+            if verbose:
+                print('\nEstimating optimal fit_range_right per extension (var_a)...')
+                if args.auto_fit_range_tolerance is not None:
+                    print(f'  tolerance = {args.auto_fit_range_tolerance}')
+                if args.auto_fit_range_max_charge_percentile is not None:
+                    print(f'  max_charge_percentile = {args.auto_fit_range_max_charge_percentile}')
+                if args.auto_fit_range_min_peaks_in_fit is not None:
+                    print(f'  min_peaks_in_fit = {args.auto_fit_range_min_peaks_in_fit}')
             fit_range_right_ext = estimate_optimal_fit_range_right_ext(
                 peaks_ext, centers_ext, pedestals, gains,
                 do_convert_to_electrons=False,
                 tolerance=args.auto_fit_range_tolerance,
                 max_charge_percentile=args.auto_fit_range_max_charge_percentile,
                 min_peaks_in_fit=args.auto_fit_range_min_peaks_in_fit,
+                verbose=verbose,
             )
         else:  # 'changepoint' (default)
-            print(f'\nEstimating fit_range_right via changepoint detection '
-                  f'(window={args.changepoint_window}, factor={args.changepoint_factor}, '
-                  f'floor={args.changepoint_floor}, persist={args.changepoint_persist})...')
+            if verbose:
+                print(f'\nEstimating fit_range_right via changepoint detection '
+                      f'(window={args.changepoint_window}, factor={args.changepoint_factor}, '
+                      f'floor={args.changepoint_floor}, persist={args.changepoint_persist})...')
             fit_range_right_ext, fit_range_diagnostics = estimate_fit_range_right_changepoint_ext(
                 peaks_ext, centers_ext, pedestals, gains,
                 do_convert_to_electrons=False,
                 win=args.changepoint_window, factor=args.changepoint_factor,
                 floor=args.changepoint_floor, persist=args.changepoint_persist,
                 confidence_rel_tol=args.fit_range_confidence_tol,
+                verbose=verbose,
             )
             low = [d['ext'] for d in fit_range_diagnostics if d.get('confidence') == 'LOW']
-            if low:
+            if low and verbose:
                 print(f'  WARNING: low-confidence fit_range_right on EXT {low} '
                       f'(changepoint and var(a) disagree by > {args.fit_range_confidence_tol*100:.0f}%); '
                       f'inspect the nonlinearity plot(s).')
@@ -489,7 +499,7 @@ def main(args=None):
         print(f'Saved fit_range estimate diagnostics to {diag_path}')
 
     # Fit parabola to nonlinearity curve
-    peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs, parabola_pcovs, = get_nonlinearity_ext(peaks_ext,
+    peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs, _ = get_nonlinearity_ext(peaks_ext,
                                                                                                         centers_ext, 
                                                                                                         pedestals, 
                                                                                                         gains, 
@@ -508,10 +518,6 @@ def main(args=None):
         nonlinearity_charges=summary_charges,
         save_path=(fig_path / 'extension_summary.csv') if save_csv else None,
     )
-
-    # Get nonlinearity at specified charge value(s)
-    if do_get_nonlinearity_at:
-        get_nonlinearity_at_ext(get_nonlinearity_at_charges, parabola_coeffs, parabola_pcovs, fit_range_right_ext)
 
     # Fit a double gaussian to zero + 1 electron peak in each extension
     if do_plot_zero_one_peaks:
@@ -679,7 +685,7 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("--no-verbose", dest="verbose", action="store_false",
                        help="Disable verbose output when enabled by JSON config")
     parser.add_argument("--extra_plot_title", type=str,
-                       default=_config_default(config, 'extra_plot_title', ''),
+                       default=_config_default(config, 'extra_plot_title', '') or '',
                         help="Additional title added at beginning of all plot titles ('<Additional title>+<Default title>)")
     parser.add_argument("--nimages", type=int,
                        default=_config_default(config, 'nimages', None),
@@ -731,15 +737,15 @@ You can enable any combination of steps using flags below.""",
                         help="(Noise-onset method) sliding window size in peaks for the local quadratic fit / MAD.")
     parser.add_argument("--noise_onset_factor", type=float, default=2.5,
                         help="(Noise-onset method) rolling MAD must exceed factor * baseline MAD to count as noise onset. Lower = more sensitive.")
-    parser.add_argument("--max_one_peak_sigma_ratio", type=float,
-                        default=_config_default(config, 'max_one_peak_sigma_ratio', 1.5),
-                        help="Maximum allowed one-electron width relative to the inferred zero-peak width")
     parser.add_argument("--do_pedestal_subtraction", action="store_true",
                         default=_config_default(config, 'do_pedestal_subtraction', True),
                         help="Whether to do pedestal subtraction along one or two axes as preprocess step")
     parser.add_argument("--n_std_to_mask", type=float,
                         default=_config_default(config, 'n_std_to_mask', 1.5),
                         help="Number of standard deviations from mean charge along axis to mask for pedestal subtraction")
+    parser.add_argument("--pedsub_max_iter", type=int,
+                        default=_config_default(config, 'pedsub_max_iter', 5),
+                        help="Max sigma-clip iterations for pedestal subtraction. Each pass re-estimates the pedestal from the clipped zero-peak core; stops early once it converges.")
     parser.add_argument("--pedestal_subtraction_axis", type=str,
                         default=_config_default(config, 'pedestal_subtraction_axis', 'row'),
                         help="Which axis to compute pedestals across. Options: 'row', 'col', 'row_then_col','col_then_row'")
