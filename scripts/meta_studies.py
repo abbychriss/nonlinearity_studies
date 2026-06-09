@@ -8,8 +8,10 @@ chosen quantities against that variable, with one line per extension.
 
 Datasets may optionally carry a ``series`` tag (a sub-category of the
 independent variable, e.g. standard vs. increased deltaV at the same VR). Series
-share the extension colour and are distinguished by linestyle; they can be
-overlaid on one figure or split onto separate figures.
+share the extension colour and are distinguished by linestyle; when there is
+only one x value (each line is a lone point, so the linestyle is invisible) they
+are distinguished by marker instead. They can be overlaid on one figure or split
+onto separate figures.
 
 Usage:
     python meta_studies.py -j config/VR_study.json
@@ -44,6 +46,7 @@ DEFAULT_PALETTE = [
     "#bab0ac",  # gray
 ]
 DEFAULT_LINESTYLES = ["-", "--", "-.", ":"]
+DEFAULT_MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*"]
 
 CONFIG_KEYS = {
     "study_name",
@@ -150,6 +153,20 @@ def _style_for(series, series_list, series_styles):
     return cycle_styles[series]
 
 
+def _marker_for(series, series_list, single_x):
+    """Resolve a series' marker.
+
+    Markers only differ between series when there is a single x value: each line
+    is then a lone point and the linestyle is invisible, so the marker is the
+    only thing distinguishing one series from another. Otherwise every line uses
+    the default round marker and series are told apart by linestyle.
+    """
+    if not single_x or series is None:
+        return "o"
+    cycle_markers = dict(zip(series_list, cycle(DEFAULT_MARKERS)))
+    return cycle_markers[series]
+
+
 def _save_figure(config, column, suffix=""):
     name = f"{column}_vs_{config['study_name']}{suffix}.jpeg"
     out_path = Path(config["output_dir"]) / name
@@ -210,19 +227,19 @@ def compute_fits(data, config):
     return records
 
 
-def _draw_line(ax, sub, column, color, style, label, fit_line, fit):
+def _draw_line(ax, sub, column, color, style, label, fit_line, fit, marker="o"):
     """Draw one (ext, series) line onto ax: connected markers, or markers + fit."""
     xs = sub["x"].to_numpy(dtype=float)
     ys = sub[column].to_numpy(dtype=float)
     if fit_line:
-        ax.plot(xs, ys, marker="o", linestyle="none", color=color, label=label)
+        ax.plot(xs, ys, marker=marker, linestyle="none", color=color, label=label)
         if fit and fit["slope"] is not None:
             x_ends = np.array([xs.min(), xs.max()])
             fit_label = f"{label} fit (R² = {fit['r_squared']:.3f})"
             ax.plot(x_ends, fit["slope"] * x_ends + fit["intercept"],
                     color=color, linestyle=style, alpha=0.5, label=fit_label)
     else:
-        ax.plot(xs, ys, marker="o", color=color, linestyle=style, label=label)
+        ax.plot(xs, ys, marker=marker, color=color, linestyle=style, label=label)
 
 
 def _render_quantity(ax, subset, column, spec, config, fits, series_list,
@@ -239,6 +256,9 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
     overlay = multi_series and group_series is None
     fit_line = _fit_enabled(spec, config)
     fit_lookup = {(f["ext"], f["series"]): f for f in fits if f["quantity"] == column}
+    # A single x value makes the linestyle invisible (each line is a lone point),
+    # so series are distinguished by marker instead.
+    single_x = subset["x"].nunique() <= 1
 
     for ext in extensions:
         ext_rows = subset[subset["ext"] == ext]
@@ -249,8 +269,9 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
                 if sub.empty:
                     continue
                 style = _style_for(series, series_list, config["series_styles"])
+                marker = _marker_for(series, series_list, single_x)
                 _draw_line(ax, sub, column, color, style, f"EXT{ext} ({series})",
-                           fit_line, fit_lookup.get((ext, series)))
+                           fit_line, fit_lookup.get((ext, series)), marker=marker)
         else:
             sub = ext_rows.sort_values("x")
             if sub.empty:
@@ -258,8 +279,9 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
             series = group_series if group_series is not None else (
                 series_list[0] if has_series else None)
             style = _style_for(series, series_list, config["series_styles"])
+            marker = _marker_for(series, series_list, single_x)
             _draw_line(ax, sub, column, color, style, f"EXT{ext}",
-                       fit_line, fit_lookup.get((ext, series)))
+                       fit_line, fit_lookup.get((ext, series)), marker=marker)
 
     # With a single series on the axes, name it in the title rather than
     # repeating it on every legend entry (e.g. "Gain vs VR (deltaV = Standard)").
