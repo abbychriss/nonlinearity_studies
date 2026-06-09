@@ -149,6 +149,7 @@ Every run prints a per-extension summary table to stdout (no flag required) with
 ##### Pedestal subtraction
 - `--do_pedestal_subtraction` / `--no-do_pedestal_subtraction`: Toggle pedestal subtraction (default `true`)
 - `--n_std_to_mask FLOAT`: Mask threshold (in standard deviations) for the pedestal estimator
+- `--pedsub_max_iter INT`: Max sigma-clip iterations for pedestal subtraction (default `5`). Each pass re-estimates the pedestal from the clipped zero-peak core and stops early once it converges.
 - `--pedestal_subtraction_axis {row, col, row_then_col, col_then_row}`: Axis to compute the pedestal across
 - `--use_biweight_loc` / `--use_biweight_midvar`: Use Tukey biweight location/midvariance instead of mean/std
 - `--pedsub_cache_dir DIR`: Directory for the pedestal-subtracted FITS cache (default: alongside the source FITS)
@@ -171,7 +172,6 @@ Every run prints a per-extension summary table to stdout (no flag required) with
 - `--fit_range_confidence_tol FLOAT`: (changepoint) relative tolerance for the `var(a)` cross-check (default `0.15` = 15%). After estimating each extension, the independent `var(a)` value is computed; extensions where the two disagree by more than this fraction are flagged `LOW` confidence — printed at runtime with a `<-- REVIEW` marker and recorded in `fit_range_estimate.json` in the run's output folder (when `--save_plots`).
 - `--auto_fit_range_tolerance FLOAT` / `--auto_fit_range_max_charge_percentile FLOAT` / `--auto_fit_range_min_peaks_in_fit INT`: (`var_a` method only) optional guards — accept the smallest candidate within `(1+tol)×min_score`, cap candidates at a charge percentile, and reject candidates enclosing too few peaks, respectively.
 - `--noise_onset_window N` / `--noise_onset_factor FLOAT`: (`noise_onset` method only) sliding-window size and the MAD-over-baseline factor for noise onset.
-- `--max_one_peak_sigma_ratio RATIO`: Maximum allowed one-electron peak width relative to the inferred zero-peak width
 
 ##### Plot layout (per plot type)
 For each of `plot_zero_one`, `plot_all_peaks`, `plot_nonlinearity`:
@@ -260,6 +260,7 @@ The same options can be written in JSON using argparse destination names. A reas
 
   "do_pedestal_subtraction": true,
   "n_std_to_mask": 1.5,
+  "pedsub_max_iter": 5,
   "pedestal_subtraction_axis": "row",
   "use_biweight_loc": true,
   "use_biweight_midvar": true,
@@ -270,7 +271,6 @@ The same options can be written in JSON using argparse destination names. A reas
   "peak_finder_buffers": [3, 3, 3, 3],
   "peak_finder_prominences": null,
   "fit_range_right": [1000, 800, 1100, 1100],
-  "max_one_peak_sigma_ratio": 1.5,
 
   "plot_zero_one_individual": false,
   "plot_zero_one_together": true,
@@ -319,7 +319,7 @@ run-nonlinearity-studies -j config/presentation_config.json --no-save_plots
 
 ### Pedestal-subtraction caching
 
-Pedestal subtraction is the slowest step in the pipeline. The first time it runs for a given source FITS file, the result is written to `<stem>.pedsub.fits` alongside the source (or to `--pedsub_cache_dir`). The four pedestal-subtraction parameters (`axis`, `n_std_to_mask`, `use_biweight_loc`, `use_biweight_midvar`) are written into the FITS header as `PEDSUB_A`, `PEDSUB_N`, `PEDSUB_L`, `PEDSUB_V`.
+Pedestal subtraction is the slowest step in the pipeline. The first time it runs for a given source FITS file, the result is written to `<stem>.pedsub.fits` alongside the source (or to `--pedsub_cache_dir`). The pedestal-subtraction parameters (`axis`, `n_std_to_mask`, `use_biweight_loc`, `use_biweight_midvar`, `max_iter`) plus an algorithm-version tag are written into the FITS header as `PEDSUB_A`, `PEDSUB_N`, `PEDSUB_L`, `PEDSUB_V`, `PEDSUB_I`, and `PEDSUB_R`. The cache is reused only when all of them match the current run, so changing any parameter (or the algorithm) triggers a recompute.
 
 On subsequent runs:
 - If the cache exists AND the header params match the current params → cached arrays are loaded instantly.
@@ -333,13 +333,13 @@ The cache is **not** automatically invalidated if the source FITS file itself ch
 ### Analysis Functions
 
 - `convert_to_electrons(data, pedestal, gain, flatten=True)`: Convert ADU values to electron counts
-- `calculate_noise_gain(data, zero_one_test_range='auto', n=200, fit_bounds='default', max_one_peak_sigma_ratio=1.5)`: Determine noise and gain from charge data with data-driven zero/one peak initialization
-- `pedestal_subtract(data, n_std_to_mask, axis='row', use_biweight_loc=True, use_biweight_midvar=True)`: Vectorized per-row/column pedestal subtraction for a single extension
-- `pedestal_subtract_ext_cached(data_ext, source_path, n_std_to_mask, axis='row', use_biweight_loc=True, use_biweight_midvar=True, cache_dir=None, force=False, verbose=True)`: Wraps `pedestal_subtract` across all extensions and caches the result to `<source_stem>.pedsub.fits`. Reuses the cache when the four pedestal parameters match those recorded in the cached FITS header.
+- `calculate_noise_gain(data, zero_one_test_range='auto', n=200, fit_bounds='default')`: Determine noise and gain from charge data with data-driven zero/one peak initialization
+- `pedestal_subtract(data, n_std_to_mask, axis='row', use_biweight_loc=True, use_biweight_midvar=True, max_iter=5, tol=0.01)`: Vectorized per-row/column pedestal subtraction for a single extension. Iteratively sigma-clips to the zero-peak core (recomputing both location and scale from the clipped pixels each pass) so overlapping one-electron pixels don't bias the pedestal; stops early once the median per-line shift falls below `tol`.
+- `pedestal_subtract_ext_cached(data_ext, source_path, n_std_to_mask, axis='row', use_biweight_loc=True, use_biweight_midvar=True, cache_dir=None, force=False, verbose=True)`: Wraps `pedestal_subtract` across all extensions and caches the result to `<source_stem>.pedsub.fits`. Reuses the cache when the pedestal parameters and algorithm version recorded in the cached FITS header match.
 - `get_fits(file_path)`: Load FITS file data (returns list of 4 extension arrays)
 - `find_all_peaks(data, width, buffer, pedestal, noise, gain, ...)`: Single-extension peak finder
 - `fit_nonlinearity(peaks, centers, pedestal, gain, fit_range_right, ...)`: Single-extension parabolic fit of the nonlinearity curve
-- `get_zero_one_peaks_ext(data_ext, n=200, fit_bounds='default', zero_one_test_range='auto', max_one_peak_sigma_ratio=1.5)`: Per-extension zero/one peak fits; returns counts, edges, pedestals, gains, double-Gaussian popts, fit ranges
+- `get_zero_one_peaks_ext(data_ext, n=200, fit_bounds='default', zero_one_test_range='auto')`: Per-extension zero/one peak fits; returns counts, edges, pedestals, gains, double-Gaussian popts, fit ranges
 - `get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, ...)`: Per-extension peak finder
 - `get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_right_ext, ...)`: Per-extension nonlinearity fit
 - `estimate_fit_range_right_changepoint_ext(peaks_ext, centers_ext, pedestals, gains, win=25, factor=4.0, floor=0.15, persist=4, cross_check=True, confidence_rel_tol=0.15, ...)`: Per-extension `fit_range_right` estimate via the default changepoint detector. Returns `(values, diagnostics)`, where `diagnostics` holds the chosen value, the `var(a)` cross-check, and a per-extension `OK`/`LOW` confidence label. (Single-extension core: `estimate_fit_range_right_changepoint`.)

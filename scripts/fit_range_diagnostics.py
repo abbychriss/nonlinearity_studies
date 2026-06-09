@@ -184,7 +184,7 @@ def build_curves(fits_path, do_pedsub=None):
     else:
         print(f'Skipping pedestal subtraction (already subtracted): {fits_path}')
     _, _, pedestals, gains, double_gauss_popts, _ = get_zero_one_peaks_ext(
-        data_ext, n=100, fit_bounds='default', max_one_peak_sigma_ratio=1.5,
+        data_ext, n=100, fit_bounds='default',
     )
     _, _, peaks_ext, centers_ext, _ = get_all_peaks_ext(
         data_ext, widths=[0.1, 0.1, 0.1, 0.1], buffers=[3, 3, 3, 3],
