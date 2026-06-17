@@ -40,15 +40,18 @@ if __name__ == "__main__":
         get_fits,
         pedestal_subtract_ext_cached,
         get_zero_one_peaks_ext,
-        get_all_peaks_ext, 
+        get_all_peaks_ext,
         get_nonlinearity_ext,
         estimate_optimal_fit_range_right_ext,
         estimate_fit_range_right_by_noise_onset_ext,
         estimate_fit_range_right_changepoint_ext,
         summarize_extensions,
+        resolution_at_charge_ext,
+        summarize_resolution,
         plot_zero_one_peaks,
         plot_all_peaks,
-        plot_nonlinearity
+        plot_nonlinearity,
+        plot_resolution
     )
 else:
     # When imported as module, use relative imports
@@ -57,15 +60,18 @@ else:
         get_fits,
         pedestal_subtract_ext_cached,
         get_zero_one_peaks_ext,
-        get_all_peaks_ext, 
+        get_all_peaks_ext,
         get_nonlinearity_ext,
         estimate_optimal_fit_range_right_ext,
         estimate_fit_range_right_by_noise_onset_ext,
         estimate_fit_range_right_changepoint_ext,
         summarize_extensions,
+        resolution_at_charge_ext,
+        summarize_resolution,
         plot_zero_one_peaks,
         plot_all_peaks,
-        plot_nonlinearity
+        plot_nonlinearity,
+        plot_resolution
     )
 
 def _derive_data_path(file_path_str):
@@ -102,6 +108,17 @@ CONFIG_KEYS = {
     'stitch_fits',
     'plot_zero_one_adu',
     'get_nonlinearity_at',
+    'resolution_at',
+    'resolution_window',
+    'resolution_sigma_well',
+    'resolution_sigma_limit',
+    'resolution_min_peak_frac',
+    'plot_resolution_individual',
+    'plot_resolution_together',
+    'plot_resolution_individual_figsize',
+    'plot_resolution_subplots_figsize',
+    'plot_resolution_sharex',
+    'plot_resolution_sharey',
     'save_plots',
     'save_csv',
     'output_dir',
@@ -236,14 +253,20 @@ def _parse_lim(raw, n_ext=4):
       None                          -> 'default'
       [l, r]                        -> (l, r)  applied to all extensions
       [[l1,r1],[l2,r2],...]         -> [(l1,r1), ...] one per extension (JSON format)
+      [[l1,r1], null, ...]          -> [(l1,r1), 'none', ...]  null = auto for that extension
       [l1, r1, l2, r2, ...]         -> [(l1,r1), ...] one per extension (CLI flat format)
     """
     if raw is None:
         return 'default'
-    if isinstance(raw[0], (list, tuple)):
+    # Per-extension form: a length-n_ext list whose entries are each a [left, right]
+    # pair or null. null means "auto for that extension" (-> 'none'). Detect it from
+    # any pair/null entry, so a leading null (e.g. [null, [0,40], ...]) still counts.
+    if any(isinstance(item, (list, tuple)) or item is None for item in raw):
         if len(raw) != n_ext:
-            raise ValueError(f'Expected {n_ext} [left, right] pairs, got {len(raw)}')
-        return [tuple(pair) for pair in raw]
+            raise ValueError(
+                f'Expected {n_ext} per-extension [left, right] pairs (null allowed), got {len(raw)}'
+            )
+        return ['none' if item is None else tuple(item) for item in raw]
     if len(raw) == 2:
         return tuple(raw)
     if len(raw) == 2 * n_ext:
@@ -417,19 +440,27 @@ def main(args=None):
         fit_bounds='default',
     )
 
+    # Extend the all-peaks histogram if a resolution charge sits near/above the
+    # default right edge, so the [q - n/2, q + n/2] window is fully covered.
+    all_peaks_range_right = 1500
+    if args.resolution_at is not None:
+        res_charges = args.resolution_at if isinstance(args.resolution_at, list) else [args.resolution_at]
+        needed = max(res_charges) + args.resolution_window / 2.0 + 50
+        all_peaks_range_right = max(all_peaks_range_right, int(np.ceil(needed)))
+
     # Apply scipy peak finder to find location of every electron peak
     counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges = get_all_peaks_ext(data_ext,
                                                                                 widths=args.peak_finder_widths,
                                                                                 buffers=args.peak_finder_buffers,
                                                                                 prominences=args.peak_finder_prominences,
-                                                                                pedestals=pedestals, 
+                                                                                pedestals=pedestals,
                                                                                 double_gauss_popts=double_gauss_popts,
                                                                                 gains=gains,
                                                                                 bins='default',
                                                                                 flatten=True,
                                                                                 do_convert_to_electrons=True,
-                                                                                range_left='default', 
-                                                                                range_right=1500, 
+                                                                                range_left='default',
+                                                                                range_right=all_peaks_range_right,
                                                                                 bin_factor=args.bin_factor,
                                                                                 print_values=verbose)
 
@@ -519,6 +550,47 @@ def main(args=None):
         save_path=(fig_path / 'extension_summary.csv') if save_csv else None,
     )
 
+    # Single-electron resolution at the requested charge(s): fit a constrained
+    # n-Gaussian comb in a window around each q and report sigma (e-), reduced
+    # chi^2, delta-AIC vs a single-Gaussian null, and a 3-tier verdict.
+    if args.resolution_at is not None:
+        resolution_charges = _normalize_scalar_or_list(args.resolution_at)
+        resolution_results_ext = resolution_at_charge_ext(
+            counts_ext, centers_ext, peaks_ext, gains, double_gauss_popts,
+            charges=resolution_charges,
+            window=args.resolution_window,
+            sigma_well=args.resolution_sigma_well,
+            sigma_limit=args.resolution_sigma_limit,
+            min_peak_frac=args.resolution_min_peak_frac,
+            verbose=verbose,
+        )
+        summarize_resolution(
+            resolution_results_ext,
+            save_path=(fig_path / 'resolution_summary.csv') if save_csv else None,
+        )
+        if args.plot_resolution_individual or args.plot_resolution_together:
+            plot_resolution(
+                resolution_results_ext,
+                resolution_charges,
+                individual_figsize=tuple(args.plot_resolution_individual_figsize),
+                subplots_figsize=tuple(args.plot_resolution_subplots_figsize),
+                additional_title=args.extra_plot_title,
+                suptitle='Single-Electron Resolution',
+                nimages=nimages,
+                sigma_well=args.resolution_sigma_well,
+                sigma_limit=args.resolution_sigma_limit,
+                plot_individual=args.plot_resolution_individual,
+                plot_together=args.plot_resolution_together,
+                sharex=args.plot_resolution_sharex,
+                sharey=args.plot_resolution_sharey,
+                show_titles=args.show_titles,
+                save_plots=save_plots,
+                show_plots=args.show_plots,
+                fig_path=str(fig_path),
+                file=image_name,
+                dpi=350,
+            )
+
     # Fit a double gaussian to zero + 1 electron peak in each extension
     if do_plot_zero_one_peaks:
         plot_zero_one_peaks(data_ext,
@@ -554,8 +626,11 @@ def main(args=None):
     if do_plot_all_peaks:
         plot_all_peaks_range_left = np.min(np.array(hist_ranges).flatten())
         plot_all_peaks_range_right = np.max(np.array(hist_ranges).flatten())
-        xlim_all_peaks = tuple(args.plot_all_peaks_xlim) if args.plot_all_peaks_xlim is not None else (plot_all_peaks_range_left, plot_all_peaks_range_right)
-        ylim_all_peaks = tuple(args.plot_all_peaks_ylim) if args.plot_all_peaks_ylim is not None else 'none'
+        xlim_all_peaks = (_parse_lim(args.plot_all_peaks_xlim, n_ext=len(data_ext))
+                          if args.plot_all_peaks_xlim is not None
+                          else (plot_all_peaks_range_left, plot_all_peaks_range_right))
+        ylim_all_peaks = (_parse_lim(args.plot_all_peaks_ylim, n_ext=len(data_ext))
+                          if args.plot_all_peaks_ylim is not None else 'none')
 
         plot_all_peaks(counts_ext,
                     peaks_ext,
@@ -661,6 +736,51 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("-g", "--get_nonlinearity_at", nargs='+', type=float,
                        default=_config_default(config, 'get_nonlinearity_at', None),
                        help="Estimate nonlinearity at specified charge value(s) using parabolic fit")
+    parser.add_argument("-r", "--resolution_at", nargs='+', type=float,
+                       default=_config_default(config, 'resolution_at', None),
+                       help="Quantify single-electron resolution at the given charge value(s) in electrons. "
+                            "For each q, fits a constrained n-Gaussian comb in a window [q - n/2, q + n/2] "
+                            "and reports sigma (e-), reduced chi^2, delta-AIC vs a single-Gaussian null, and a verdict.")
+    parser.add_argument("--resolution_window", type=float,
+                       default=_config_default(config, 'resolution_window', 10.0),
+                       help="Window width n (in electrons, ~ number of peaks) for the resolution comb fit. Default 10.")
+    parser.add_argument("--resolution_sigma_well", type=float,
+                       default=_config_default(config, 'resolution_sigma_well', 0.25),
+                       help="sigma (e-) below which peaks are 'well resolved' (separation > 4 sigma). Default 0.25.")
+    parser.add_argument("--resolution_sigma_limit", type=float,
+                       default=_config_default(config, 'resolution_sigma_limit', 0.5),
+                       help="sigma (e-) at/above which peaks are 'unresolved' (no central valley, separation < 2 sigma). Default 0.5.")
+    parser.add_argument("--resolution_min_peak_frac", type=float,
+                       default=_config_default(config, 'resolution_min_peak_frac', 0.6),
+                       help="Detected/expected peak fraction below which the window is 'unresolved' regardless of sigma. Default 0.6.")
+    parser.add_argument("--plot_resolution_individual", action="store_true",
+                       default=_config_default(config, 'plot_resolution_individual', False),
+                       help="Plot one resolution-window figure per (extension, charge)")
+    parser.add_argument("--no-plot_resolution_individual", dest="plot_resolution_individual", action="store_false",
+                       help="Disable individual resolution-window plots when enabled by JSON config")
+    parser.add_argument("--plot_resolution_together", action="store_true",
+                       default=_config_default(config, 'plot_resolution_together', True),
+                       help="Plot resolution windows as a combined 2x2 subplot (one per extension) per charge")
+    parser.add_argument("--no-plot_resolution_together", dest="plot_resolution_together", action="store_false",
+                       help="Disable the combined resolution-window subplot")
+    parser.add_argument("--plot_resolution_individual_figsize", nargs=2, type=float,
+                       default=_config_default(config, 'plot_resolution_individual_figsize', [8, 6.5]),
+                       metavar=('W', 'H'),
+                       help="Figure size (width height) for individual resolution-window plots")
+    parser.add_argument("--plot_resolution_subplots_figsize", nargs=2, type=float,
+                       default=_config_default(config, 'plot_resolution_subplots_figsize', [13, 9]),
+                       metavar=('W', 'H'),
+                       help="Figure size (width height) for the combined 2x2 resolution-window subplot")
+    parser.add_argument("--plot_resolution_sharex", action="store_true",
+                       default=_config_default(config, 'plot_resolution_sharex', False),
+                       help="Share x-axis range across the 2x2 resolution-window subplots")
+    parser.add_argument("--no-plot_resolution_sharex", dest="plot_resolution_sharex", action="store_false",
+                       help="Allow independent x-axis ranges per resolution-window subplot (default)")
+    parser.add_argument("--plot_resolution_sharey", action="store_true",
+                       default=_config_default(config, 'plot_resolution_sharey', False),
+                       help="Share y-axis range across the 2x2 resolution-window subplots")
+    parser.add_argument("--no-plot_resolution_sharey", dest="plot_resolution_sharey", action="store_false",
+                       help="Allow independent y-axis ranges per resolution-window subplot (default)")
     parser.add_argument("-s", "--save_plots", action="store_true",
                        default=_config_default(config, 'save_plots', False),
                        help="Save all plots as jpeg images")
@@ -771,14 +891,14 @@ You can enable any combination of steps using flags below.""",
                         default=_config_default(config, 'plot_zero_one_subplots_figsize', [10, 8]),
                         metavar=('W', 'H'),
                         help="Figure size (width height) for combined 2x2 zero/one peak subplot")
-    parser.add_argument("--plot_all_peaks_xlim", nargs=2, type=float,
+    parser.add_argument("--plot_all_peaks_xlim", nargs='+', type=float,
                         default=_config_default(config, 'plot_all_peaks_xlim', None),
-                        metavar=('LEFT', 'RIGHT'),
-                        help="X-axis limits for all-peaks plot. Defaults to full histogram range if not set.")
-    parser.add_argument("--plot_all_peaks_ylim", nargs=2, type=float,
+                        metavar='VAL',
+                        help="X-axis limits for all-peaks plot. Provide 2 values (LEFT RIGHT) to apply to all extensions, or 8 values (L1 R1 L2 R2 L3 R3 L4 R4) for per-extension limits. Defaults to full histogram range if not set.")
+    parser.add_argument("--plot_all_peaks_ylim", nargs='+', type=float,
                         default=_config_default(config, 'plot_all_peaks_ylim', None),
-                        metavar=('BOTTOM', 'TOP'),
-                        help="Y-axis limits for all-peaks plot. Defaults to auto if not set.")
+                        metavar='VAL',
+                        help="Y-axis limits for all-peaks plot. Provide 2 values (BOTTOM TOP) to apply to all extensions, or 8 values (B1 T1 B2 T2 B3 T3 B4 T4) for per-extension limits. Defaults to auto if not set.")
     parser.add_argument("--plot_all_peaks_yscale", type=str,
                         default=_config_default(config, 'plot_all_peaks_yscale', 'linear'),
                         help="Y-axis scale for all-peaks plot. Options: 'linear', 'log'")

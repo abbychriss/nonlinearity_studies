@@ -8,6 +8,7 @@ A Python package for analyzing nonlinearity in CCDs.
 - **Noise & Gain Calculation**: Determines noise and gain from data and converts to e-
 - **Peak Finder**: Finds all electron peaks in charge distribution
 - **Nonlinearity Computation**: Quantifies detector response linearity as a function of charge
+- **Single-Electron Resolution**: Quantifies how well single-electron peaks are resolved at a given charge by fitting a constrained *n*-Gaussian comb in a local window and reporting the shared peak width σ (e-), goodness of fit, and a resolved/marginal/unresolved verdict
 - **Visualization**: Creates histograms of charge distribution and plots nonlinearity curve, with per-plot control over individual vs. 2×2 subplot layouts, figure sizes, axis sharing, scales, limits, and titles
 - **Image Stitching**: Combine multi-extension FITS images and run analysis on stitched image
 
@@ -142,6 +143,7 @@ Each plot type is controlled by its `_individual` and `_together` toggles (see [
 - `-z`, `--plot_zero_one_adu`: Render the zero/one electron peak fits in ADU (units selector for the zero/one plot)
 - `--plot_zero_one_electrons`: Render the zero/one electron peak fits in e- (independent of the ADU flag)
 - `-g`, `--get_nonlinearity_at CHARGE...`: Evaluate the nonlinearity polynomial at one or more charge values
+- `-r`, `--resolution_at CHARGE...`: Quantify single-electron resolution at one or more charge values (see [Single-electron resolution](#single-electron-resolution))
 
 ##### Per-extension summary table
 Every run prints a per-extension summary table to stdout (no flag required) with the **gain** in ADU/e- (the separation between the zero- and one-electron peaks from the double-Gaussian fit), the **noise** in e- (the standard deviation of the zero-electron peak, converted from ADU to electrons by dividing by the gain), and one **nonlinearity** column per charge passed to `--get_nonlinearity_at` (falling back to 500 e- when none is given). With `--save_csv`, the same table is written as a CSV (`extension_summary.csv`) in the output directory — one row per extension with a header row, ready to load with `numpy.genfromtxt(..., delimiter=',', names=True)` or `numpy.loadtxt(..., delimiter=',', skiprows=1)`.
@@ -173,8 +175,19 @@ Every run prints a per-extension summary table to stdout (no flag required) with
 - `--auto_fit_range_tolerance FLOAT` / `--auto_fit_range_max_charge_percentile FLOAT` / `--auto_fit_range_min_peaks_in_fit INT`: (`var_a` method only) optional guards — accept the smallest candidate within `(1+tol)×min_score`, cap candidates at a charge percentile, and reject candidates enclosing too few peaks, respectively.
 - `--noise_onset_window N` / `--noise_onset_factor FLOAT`: (`noise_onset` method only) sliding-window size and the MAD-over-baseline factor for noise onset.
 
+##### Single-electron resolution
+The resolution step runs only when `--resolution_at` is given. For each requested charge *q* it takes a window `[q - n/2, q + n/2]` of the all-peaks histogram (n peaks wide), fits a constrained sum of Gaussians — a *comb* with means **fixed** at the already-detected peak locations, a single **shared** σ across all components, and free amplitudes — and scores how well that comb describes the window. The shared σ, in electrons, is the resolution figure of merit. Goodness of fit is reported as the comb's reduced χ² and as ΔAIC versus a single broad Gaussian "unresolved" null (positive favors the comb). Each window also gets a three-tier verdict (`well resolved` / `marginal` / `unresolved`). When the all-peaks histogram's right edge would fall short of the largest requested window, it is automatically extended to cover it.
+
+- `-r`, `--resolution_at CHARGE [CHARGE ...]`: Charge value(s) in electrons to evaluate. Omitted (default `null`) → the resolution step is skipped entirely.
+- `--resolution_window FLOAT`: Window width *n* in electrons (≈ number of peaks per window). Default `10`.
+- `--resolution_sigma_well FLOAT`: σ (e-) below which peaks are **well resolved** (separation > 4σ). Default `0.25`.
+- `--resolution_sigma_limit FLOAT`: σ (e-) at/above which peaks are **unresolved** (no central valley, separation < 2σ). Default `0.5`. Between `sigma_well` and `sigma_limit` the verdict is `marginal`.
+- `--resolution_min_peak_frac FLOAT`: Detected/expected peak fraction below which the window is **unresolved** regardless of σ. Default `0.6`. This catches windows where the peak finder recovered far fewer than the ~`window+1` peaks the window should hold (e.g. 2 of 11) — too smeared to detect, so the under-determined σ is meaningless.
+
+The verdict, σ, reduced χ², ΔAIC, and detected/expected peak counts are printed in a per-charge/per-extension table. With `--save_csv` the same table is written to `resolution_summary.csv` in the run's output folder.
+
 ##### Plot layout (per plot type)
-For each of `plot_zero_one`, `plot_all_peaks`, `plot_nonlinearity`:
+For each of `plot_zero_one`, `plot_all_peaks`, `plot_nonlinearity`, `plot_resolution`:
 - `--<plot>_individual` / `--no-<plot>_individual`: Render one figure per extension
 - `--<plot>_together` / `--no-<plot>_together`: Render a single 2×2 subplot grid for all extensions
 - `--<plot>_individual_figsize W H`: Figure size for individual mode
@@ -183,6 +196,8 @@ For each of `plot_zero_one`, `plot_all_peaks`, `plot_nonlinearity`:
 - `--<plot>_sharey` / `--no-<plot>_sharey`: Share y-axis range across the 2×2 grid
 
 Top-row x-axis labels and right-column y-axis labels are always hidden in the 2×2 grids (tick labels are kept regardless of `sharex`/`sharey`).
+
+For `plot_resolution` the two modes differ slightly because there can be several charges: `individual` renders one figure per (extension, charge), while `together` renders one 2×2 grid (one extension per panel) **per charge**. Its `_individual`/`_together` toggles default to `false`/`true`, and `--plot_resolution_subplots_figsize` defaults to `[13, 9]` (wider than the other plots to fit the wide windows). Resolution plots are only produced when `--resolution_at` is also set.
 
 ##### Plot styling
 - `--plot_zero_one_yscale {linear, log}`
@@ -229,6 +244,17 @@ run-nonlinearity-studies \
     --get_nonlinearity_at 10 50 500 1000
 ```
 
+To quantify single-electron resolution at one or more charges, pass `--resolution_at`. This prints (and, with `--save_csv`, saves) a per-charge/per-extension table of σ, reduced χ², ΔAIC, peak counts, and verdict, and with a plot flag draws the windowed comb fits:
+
+```bash
+run-nonlinearity-studies \
+    "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
+    --resolution_at 200 600 1000 --resolution_window 10 \
+    --plot_resolution_together --save_plots --save_csv
+```
+
+A ready-made config is provided at `config/resolution_study.json`.
+
 To let the pipeline choose the parabola fit range per extension, pass `--fit_range_right auto`. This uses the `changepoint` estimator and cross-checks each result against `var(a)` to assign a per-extension confidence label:
 
 ```bash
@@ -258,6 +284,18 @@ The same options can be written in JSON using argparse destination names. A reas
   "plot_zero_one_adu": true,
   "plot_zero_one_electrons": true,
   "get_nonlinearity_at": 500,
+
+  "resolution_at": [200, 600, 1000],
+  "resolution_window": 10,
+  "resolution_sigma_well": 0.25,
+  "resolution_sigma_limit": 0.5,
+  "resolution_min_peak_frac": 0.6,
+  "plot_resolution_individual": false,
+  "plot_resolution_together": true,
+  "plot_resolution_individual_figsize": [8, 6.5],
+  "plot_resolution_subplots_figsize": [13, 9],
+  "plot_resolution_sharex": false,
+  "plot_resolution_sharey": false,
 
   "do_pedestal_subtraction": true,
   "n_std_to_mask": 1.5,
@@ -346,6 +384,10 @@ The cache is **not** automatically invalidated if the source FITS file itself ch
 - `estimate_fit_range_right_changepoint_ext(peaks_ext, centers_ext, pedestals, gains, win=25, factor=4.0, floor=0.15, persist=4, cross_check=True, confidence_rel_tol=0.15, ...)`: Per-extension `fit_range_right` estimate via the default changepoint detector. Returns `(values, diagnostics)`, where `diagnostics` holds the chosen value, the `var(a)` cross-check, and a per-extension `OK`/`LOW` confidence label. (Single-extension core: `estimate_fit_range_right_changepoint`.)
 - `estimate_optimal_fit_range_right_ext(...)` / `estimate_fit_range_right_by_noise_onset_ext(...)`: Alternative `fit_range_right` estimators (`var_a` and experimental `noise_onset`; see `--auto_fit_range_method`).
 - `get_nonlinearity_at_ext(q, parabola_coeffs, parabola_pcovs, fit_range_right_ext)`: Evaluate the parabolic fit at one or more charge values, per extension
+- `resolution_at_charge(counts, centers, peaks, q, window, gain, s0)`: Single-extension single-electron resolution at charge `q`. Fits a constrained *n*-Gaussian comb (means fixed at the detected peaks, one shared σ, free amplitudes) in `[q - window/2, q + window/2]` and returns a result dict with `sigma_e`, `sigma_e_err`, `reduced_chi2`, `delta_aic`, `n_components`, `expected_peaks`, and the windowed data/fit curves for plotting.
+- `resolution_at_charge_ext(counts_ext, centers_ext, peaks_ext, gains, double_gauss_popts, charges, window=10.0, sigma_well=0.25, sigma_limit=0.5, min_peak_frac=0.6, ...)`: Per-extension resolution at one or more charges. Returns a nested list (per extension, per charge) of result dicts, each augmented with `ext` and a `verdict`.
+- `classify_resolution(res, sigma_well=0.25, sigma_limit=0.5, min_peak_frac=0.6)`: Map a result dict to a three-tier verdict (`well resolved` / `marginal` / `unresolved`) from the fitted σ relative to the 1 e- spacing and the detected/expected peak fraction.
+- `summarize_resolution(results_ext, save_path=None)`: Print the per-charge/per-extension resolution table (σ, reduced χ², ΔAIC, peak counts, verdict); writes it as CSV (`resolution_summary.csv`) when `save_path` is given. (`format_resolution_table(results_ext)` returns the printable table string.)
 - `summarize_extensions(gains, double_gauss_popts, parabola_coeffs, nonlinearity_charges=500, save_path=None)`: Print the per-extension summary table of gain (ADU/e-), noise (e-), and nonlinearity at one or more charges (`nonlinearity_charges` accepts a scalar or list); writes it as CSV when `save_path` is given. Returns the summary rows. (Builders: `build_extension_summary` returns `(rows, charges)` as dicts; `format_extension_summary(rows, charges)` turns them into the printable table string.)
 
 ### Plotting Functions
@@ -355,6 +397,7 @@ Each plotting function accepts `plot_individual` and `plot_together` toggles, in
 - `plot_zero_one_peaks(data_ext, zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges, do_plot_adu=True, do_convert_to_electrons=False, yscale='linear', ...)`: Visualize zero/one electron peak fits in ADU and/or electrons.
 - `plot_all_peaks(counts_ext, peaks_ext, centers_ext, xlim, ylim='none', yscale='log', draw_lines=True, ...)`: Visualize the full charge distribution with a marker at each identified peak.
 - `plot_nonlinearity(peaks_ext, parabola_coeffs, peak_charge_e_ext, charge_minus_npeak_ext, fit_range_right_ext, xlim='default', ylim='default', ...)`: Plot the nonlinearity curve and parabolic fit. `xlim`/`ylim` accept `'default'`, `'none'`, a single `(left, right)` applied to all extensions, or a list of 4 per-extension tuples.
+- `plot_resolution(results_ext, charges, sigma_well=0.25, sigma_limit=0.5, plot_individual=False, plot_together=True, ...)`: Plot the resolution windows from `resolution_at_charge_ext` — data histogram, the individual comb components, the comb sum, the single-Gaussian null, and a verdict annotation box. `plot_individual` makes one figure per (extension, charge); `plot_together` makes one 2×2 grid per charge.
 
 ### Utility
 
@@ -366,7 +409,8 @@ Each plotting function accepts `plot_individual` and `plot_together` toggles, in
 nonlinearity_studies/                # Repository root
 ├── config/                          # Example JSON configs
 │   ├── presentation_config.json
-│   └── report_config.json
+│   ├── report_config.json
+│   └── resolution_study.json
 ├── examples/                        # Examples directory
 │   └── images/                      # Sample FITS/FZ images
 ├── nonlinearity_studies/            # Main package directory

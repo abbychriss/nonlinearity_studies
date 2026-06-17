@@ -13,6 +13,12 @@ only one x value (each line is a lone point, so the linestyle is invisible) they
 are distinguished by marker instead. They can be overlaid on one figure or split
 onto separate figures.
 
+Set ``"x_axis": "extension"`` to flip the orientation: extension goes on the
+x-axis, each series becomes its own coloured line, and the independent-variable
+value (e.g. VR = -6) is pinned in the title. One figure is produced per distinct
+x value. This is the natural view when the independent variable is held fixed
+and you want to compare a quantity across extensions for a few series.
+
 Usage:
     python meta_studies.py -j config/VR_study.json
 
@@ -23,6 +29,7 @@ files are named.
 
 import argparse
 import json
+import re
 from itertools import cycle
 from pathlib import Path
 
@@ -35,9 +42,9 @@ plt.rcParams["font.size"] = 12
 # Default colour per extension: the Tableau 10 palette.
 DEFAULT_PALETTE = [
     "#4e79a7",  # blue
-    "#f28e2b",  # orange
     "#e15759",  # red
     "#76b7b2",  # teal
+    "#f28e2b",  # orange
     "#59a14f",  # green
     "#edc948",  # yellow
     "#b07aa1",  # purple
@@ -51,6 +58,7 @@ DEFAULT_MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*"]
 CONFIG_KEYS = {
     "study_name",
     "x_label",
+    "x_axis",
     "invert_x",
     "output_dir",
     "quantities",
@@ -96,6 +104,7 @@ def load_config(config_path):
         raise ValueError(f"Missing required config option(s): {', '.join(missing)}.")
 
     # Defaults.
+    config.setdefault("x_axis", "value")
     config.setdefault("invert_x", False)
     config.setdefault("series_label", None)
     config.setdefault("series_same_plot", True)
@@ -111,18 +120,35 @@ def load_config(config_path):
     config.setdefault("subplots_figsize", None)
     config.setdefault("subplots_ncols", None)
 
+    if config["x_axis"] not in ("value", "extension"):
+        raise ValueError(
+            f"'x_axis' must be 'value' or 'extension', got {config['x_axis']!r}."
+        )
+
     for dataset in config["datasets"]:
         if "x" not in dataset or "table" not in dataset:
             raise ValueError(f"Each dataset needs an 'x' and a 'table': {dataset!r}")
+        if "exclude_ext" in dataset and not isinstance(dataset["exclude_ext"], list):
+            raise ValueError(
+                f"'exclude_ext' must be a list of extension numbers: {dataset!r}"
+            )
 
     return config
 
 
 def load_datasets(config):
-    """Read every table, tag rows with x (and series), return one tidy frame."""
+    """Read every table, tag rows with x (and series), return one tidy frame.
+
+    A dataset may carry ``"exclude_ext": [...]`` to drop specific extensions from
+    that dataset only (e.g. an extension that misbehaves at one operating point),
+    leaving those extensions intact in the other datasets.
+    """
     records = []
     for dataset in config["datasets"]:
         df = pd.read_csv(dataset["table"]).sort_values("ext")
+        exclude_ext = dataset.get("exclude_ext")
+        if exclude_ext:
+            df = df[~df["ext"].isin(exclude_ext)]
         df["x"] = dataset["x"]
         if "series" in dataset:
             df["series"] = dataset["series"]
@@ -290,7 +316,7 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
         fig_series = group_series if group_series is not None else (
             series_list[0] if has_series else None)
         if fig_series is not None:
-            title = f"{title} ({config['series_label'] or 'series'} = {fig_series})"
+            title = f"{title} ({_labeled_value(config['series_label'] or 'series', fig_series)})"
 
     if config["invert_x"]:
         ax.invert_xaxis()
@@ -346,6 +372,113 @@ def plot_all_together(data, config, fits):
     out_path = Path(config["output_dir"]) / f"{config['study_name']}_subplots.jpeg"
     fig.savefig(out_path, dpi=config["dpi"])
     return out_path
+
+
+def _labeled_value(label, value):
+    """Render ``"<name> = <value><unit>"`` from a label like ``"VR (V)"``.
+
+    A label of the form ``"NAME (UNIT)"`` attaches the unit directly to the value
+    (e.g. ``"VR (V)"`` with -8 -> ``"VR = -8V"``); otherwise the label is used
+    verbatim (``"<label> = <value>"``). Numeric values (including numeric strings
+    like ``"-8"`` from a JSON series tag) are formatted compactly; non-numeric
+    values (e.g. ``"Standard"``) are used as-is.
+    """
+    try:
+        value = f"{float(value):g}"
+    except (TypeError, ValueError):
+        value = str(value)
+    match = re.fullmatch(r"\s*(.*?)\s*\(([^)]*)\)\s*", label)
+    if match:
+        name, unit = match.group(1), match.group(2)
+        return f"{name} = {value}{unit}"
+    return f"{label} = {value}"
+
+
+def _render_quantity_vs_ext(ax, subset, column, spec, config, x_value,
+                            series_list, legend_fontsize=None):
+    """Draw one quantity with extension on the x-axis at a fixed x value.
+
+    Here the roles are flipped relative to ``_render_quantity``: extension is the
+    independent axis and each series is its own colour and marker, while the
+    held-fixed independent-variable value (e.g. VR = -6) is named in the title.
+    Extensions are independent channels, not a continuum, so points are drawn
+    unconnected (no line between extensions).
+    """
+    series_to_plot = series_list if series_list else [None]
+    palette = (config["colors"] if isinstance(config["colors"], list)
+               and config["colors"] else DEFAULT_PALETTE)
+
+    for idx, series in enumerate(series_to_plot):
+        sub = subset if series is None else subset[subset["series"] == series]
+        sub = sub.dropna(subset=[column]).sort_values("ext")
+        if sub.empty:
+            continue
+        color = palette[idx % len(palette)]
+        marker = DEFAULT_MARKERS[idx % len(DEFAULT_MARKERS)] if series is not None else "o"
+        label = str(series) if series is not None else spec.get("ylabel", column)
+        ax.plot(sub["ext"].to_numpy(dtype=float), sub[column].to_numpy(dtype=float),
+                marker=marker, linestyle="none", color=color, label=label)
+
+    base_title = spec.get("title_vs_ext", f"{spec.get('ylabel', column)} vs extension")
+    ax.set_title(f"{base_title} ({_labeled_value(config['x_label'], x_value)})")
+    ax.set_xlabel("Extension")
+    ax.set_ylabel(spec.get("ylabel", column))
+    ax.set_xticks(sorted(subset["ext"].unique()))
+    ax.legend(fontsize=legend_fontsize)
+    ax.grid(True, alpha=0.3)
+
+
+def plot_quantity_vs_ext(data, column, spec, config):
+    """Plot one quantity vs extension, one figure per distinct x value.
+
+    Returns the saved figure paths.
+    """
+    series_list = [s for s in data["series"].dropna().unique()]
+    multi_x = data["x"].nunique() > 1
+    saved = []
+    for x_value in sorted(data["x"].unique()):
+        subset = data[data["x"] == x_value]
+        fig, ax = plt.subplots(figsize=config["figsize"])
+        _render_quantity_vs_ext(ax, subset, column, spec, config, x_value, series_list)
+        fig.tight_layout()
+        suffix = f"_x{x_value:g}" if multi_x else ""
+        out_path = (Path(config["output_dir"])
+                    / f"{column}_vs_ext_{config['study_name']}{suffix}.jpeg")
+        fig.savefig(out_path, dpi=config["dpi"])
+        saved.append(out_path)
+    return saved
+
+
+def plot_all_together_vs_ext(data, config):
+    """Plot every quantity vs extension as subplots, one figure per x value.
+
+    Returns the saved figure paths.
+    """
+    series_list = [s for s in data["series"].dropna().unique()]
+    quantities = list(config["quantities"].items())
+    n = len(quantities)
+    ncols = config["subplots_ncols"] or int(np.ceil(np.sqrt(n)))
+    nrows = -(-n // ncols)  # ceil
+    figsize = config["subplots_figsize"] or [6.5 * ncols, 5.5 * nrows]
+    multi_x = data["x"].nunique() > 1
+    saved = []
+
+    for x_value in sorted(data["x"].unique()):
+        subset = data[data["x"] == x_value]
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
+        flat_axes = axes.flatten()
+        for ax, (column, spec) in zip(flat_axes, quantities):
+            _render_quantity_vs_ext(ax, subset, column, spec, config, x_value,
+                                    series_list, legend_fontsize="small")
+        for ax in flat_axes[n:]:
+            ax.set_visible(False)
+        fig.tight_layout()
+        suffix = f"_x{x_value:g}" if multi_x else ""
+        out_path = (Path(config["output_dir"])
+                    / f"{config['study_name']}_ext_subplots{suffix}.jpeg")
+        fig.savefig(out_path, dpi=config["dpi"])
+        saved.append(out_path)
+    return saved
 
 
 def write_report(config, table_str, fits):
@@ -413,14 +546,20 @@ def run_study(config):
     print(table_str)
 
     fits = compute_fits(data, config)
+    vs_extension = config["x_axis"] == "extension"
 
     if config["plot_individual"]:
         for column, spec in config["quantities"].items():
-            for path in plot_quantity(data, column, spec, config, fits):
+            paths = (plot_quantity_vs_ext(data, column, spec, config) if vs_extension
+                     else plot_quantity(data, column, spec, config, fits))
+            for path in paths:
                 print(f"Saved {path}")
 
     if config["plot_together"]:
-        print(f"Saved {plot_all_together(data, config, fits)}")
+        paths = (plot_all_together_vs_ext(data, config) if vs_extension
+                 else [plot_all_together(data, config, fits)])
+        for path in paths:
+            print(f"Saved {path}")
 
     if config["save_report"]:
         print(f"Saved {write_report(config, table_str, fits)}")

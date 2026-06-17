@@ -509,6 +509,268 @@ def get_nonlinearity_at(q, parabola_coeff, parabola_pcov=None, fit_range_right=N
 
     return nonlinearity_at_q
 
+
+#---------------- (5) Single-electron resolution at a charge ----------------------------
+# Quantify how well single-electron peaks are resolved near a charge q by fitting a
+# constrained sum of Gaussians ("comb") to the windowed charge spectrum:
+#   - means FIXED at the already-detected peak locations (absorbs the nonlinearity shift,
+#     which moves absolute peak positions but barely changes the local ~1 e- spacing),
+#   - a single SHARED sigma across components (single-electron readout noise is ~constant
+#     across a small window); this sigma, in electrons, IS the resolution figure of merit,
+#   - free amplitudes (they follow the charge-distribution envelope).
+# Goodness of fit is reported as the comb's reduced chi^2 and as delta-AIC vs a single
+# broad Gaussian "unresolved" null (positive favors the comb -> peaks are resolved).
+
+def _gauss_single(x, amp, mu, sigma):
+    return amp * np.exp(-0.5 * ((np.asarray(x, dtype=float) - mu) / sigma) ** 2)
+
+
+def _make_comb_model(means):
+    """Return a curve_fit-compatible model f(x, sigma, A_0, A_1, ...) that sums
+    len(means) Gaussians with FIXED means and a single SHARED sigma."""
+    means = np.asarray(means, dtype=float)
+
+    def comb(x, sigma, *amps):
+        x = np.asarray(x, dtype=float)
+        y = np.zeros_like(x)
+        for amp, mu in zip(amps, means):
+            y += amp * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
+        return y
+
+    return comb, len(means)
+
+
+def _resolution_poisson_weights(counts):
+    """Per-bin Poisson sigma with a floor of 1 so empty bins don't blow up."""
+    return np.sqrt(np.maximum(counts, 1.0))
+
+
+def _resolution_reduced_chi2(counts, model, n_params):
+    err = _resolution_poisson_weights(counts)
+    chi2 = float(np.sum(((counts - model) / err) ** 2))
+    dof = max(len(counts) - n_params, 1)
+    return chi2, dof, chi2 / dof
+
+
+def _resolution_poisson_deviance(counts, model):
+    """Cash/Poisson deviance 2*sum(mu - n + n*ln(n/mu)); equals -2 ln L up to a
+    data-only constant that cancels in delta-AIC, so it is valid for model
+    comparison even when bin counts are low."""
+    mu = np.maximum(model, 1e-12)
+    n = np.asarray(counts, dtype=float)
+    term = np.zeros_like(n)
+    nz = n > 0
+    term[nz] = n[nz] * np.log(n[nz] / mu[nz])
+    return float(2.0 * np.sum(mu - n + term))
+
+
+def resolution_at_charge(counts, centers, peaks, q, window, gain, s0):
+    """Fit the constrained comb in [q - window/2, q + window/2] and score it.
+
+    Args:
+        counts, centers : the all-peaks histogram for one extension (electrons).
+        peaks           : indices into centers of the detected peaks.
+        q               : center charge of the window (electrons).
+        window          : window width in electrons (~ number of peaks).
+        gain            : ADU/e- for this extension.
+        s0              : zero-peak sigma in ADU (double_gauss_popts[ext][0]);
+                          s0/gain seeds the shared sigma in electrons.
+
+    Returns a result dict (sigma_e, sigma_e_err, reduced_chi2, delta_aic,
+    n_components, expected_peaks, plus the windowed data and fit curves for
+    plotting). Raises ValueError if the window has too few bins or peaks to fit.
+    """
+    centers = np.asarray(centers, dtype=float)
+    counts = np.asarray(counts, dtype=float)
+    half = window / 2.0
+    lo, hi = q - half, q + half
+
+    bin_mask = (centers >= lo) & (centers <= hi)
+    xw, yw = centers[bin_mask], counts[bin_mask]
+    if xw.size < 5:
+        raise ValueError(f'q={q}: only {xw.size} histogram bins in window '
+                         f'[{lo:.0f}, {hi:.0f}] -- widen the window, raise bin_factor, '
+                         f'or extend the all-peaks histogram range')
+
+    peak_charges = centers[np.asarray(peaks, dtype=int)]
+    means = peak_charges[(peak_charges >= lo) & (peak_charges <= hi)]
+    if means.size < 2:
+        raise ValueError(f'q={q}: only {means.size} detected peaks in window '
+                         f'[{lo:.0f}, {hi:.0f}] -- nothing to decompose')
+
+    bin_width = float(np.median(np.diff(xw)))
+    sigma0 = max(s0 / gain, bin_width)
+
+    # ---- comb fit: params = [sigma, A_0, ..., A_{K-1}] ----
+    comb, K = _make_comb_model(means)
+    amp0 = np.interp(means, xw, yw)
+    amp0 = np.where(amp0 > 0, amp0, 1.0)
+    p0 = [sigma0, *amp0]
+    lower = [1e-6] + [0.0] * K
+    upper = [window] + [np.inf] * K
+    err = _resolution_poisson_weights(yw)
+    popt, pcov = curve_fit(comb, xw, yw, p0=p0, sigma=err, absolute_sigma=True,
+                           bounds=(lower, upper), maxfev=20000)
+    sigma_e = float(popt[0])
+    sigma_e_err = float(np.sqrt(pcov[0, 0])) if np.all(np.isfinite(pcov)) else np.nan
+    comb_model = comb(xw, *popt)
+    k_comb = K + 1
+
+    # ---- null: single broad Gaussian ----
+    p0_null = [float(np.max(yw)), float(np.average(xw, weights=np.maximum(yw, 1e-9))),
+               max(window / 4.0, bin_width)]
+    try:
+        popt_null, _ = curve_fit(_gauss_single, xw, yw, p0=p0_null, sigma=err,
+                                 absolute_sigma=True,
+                                 bounds=([0.0, lo, 1e-6], [np.inf, hi, 5 * window]),
+                                 maxfev=20000)
+        null_model = _gauss_single(xw, *popt_null)
+    except (RuntimeError, ValueError):
+        popt_null, null_model = None, np.full_like(xw, np.mean(yw))
+    k_null = 3
+
+    # ---- scores ----
+    chi2_comb, dof_comb, rchi2_comb = _resolution_reduced_chi2(yw, comb_model, k_comb)
+    dev_comb = _resolution_poisson_deviance(yw, comb_model)
+    dev_null = _resolution_poisson_deviance(yw, null_model)
+    aic_comb = dev_comb + 2 * k_comb
+    aic_null = dev_null + 2 * k_null
+    nbin = len(yw)
+    bic_comb = dev_comb + k_comb * np.log(nbin)
+    bic_null = dev_null + k_null * np.log(nbin)
+
+    # Integer electron peaks the window *should* contain if every electron
+    # produced a resolvable peak. A find_peaks count well below this is itself a
+    # resolution failure (the peaks were too smeared to detect).
+    expected_peaks = int(np.floor(hi)) - int(np.ceil(lo)) + 1
+
+    return {
+        'q': float(q), 'window': float(window), 'lo': lo, 'hi': hi,
+        'n_components': K, 'expected_peaks': expected_peaks, 'means': means,
+        'sigma_e': sigma_e, 'sigma_e_err': sigma_e_err, 'sigma_seed_e': sigma0,
+        'reduced_chi2': rchi2_comb, 'chi2': chi2_comb, 'dof': dof_comb,
+        'delta_aic': aic_null - aic_comb,   # > 0 favors the comb (resolved)
+        'delta_bic': bic_null - bic_comb,
+        'xw': xw, 'yw': yw, 'bin_width': bin_width,
+        'comb_popt': popt, 'comb_model': comb_model,
+        'null_popt': popt_null, 'null_model': null_model,
+    }
+
+
+def classify_resolution(res, sigma_well=0.25, sigma_limit=0.5, min_peak_frac=0.6):
+    """Three-tier resolution verdict from the fitted sigma and the peak count.
+
+    Two independent signals, either of which can condemn an extension:
+
+      * sigma (e-) relative to the 1 e- peak spacing. Unit-spaced Gaussians show
+        a central valley only when sigma < ~0.5 e- (separation > 2 sigma) and
+        separate cleanly when sigma < ~0.25 e- (separation > 4 sigma).
+      * the fraction of expected peaks actually detected/fit. If find_peaks only
+        recovered a handful of the ~window+1 peaks the window should hold, the
+        peaks were too smeared to detect -- a resolution failure regardless of
+        what sigma the (under-determined) fit returned. This catches an
+        extension that fit to only 2 peaks.
+
+    Returns one of 'well resolved', 'marginal', 'unresolved'.
+    """
+    frac = res['n_components'] / max(res['expected_peaks'], 1)
+    if frac < min_peak_frac or res['sigma_e'] >= sigma_limit:
+        return 'unresolved'
+    if res['sigma_e'] < sigma_well:
+        return 'well resolved'
+    return 'marginal'
+
+
+def resolution_at_charge_ext(counts_ext, centers_ext, peaks_ext, gains, double_gauss_popts,
+                             charges, window=10.0,
+                             sigma_well=0.25, sigma_limit=0.5, min_peak_frac=0.6,
+                             verbose=True):
+    """Per-extension single-electron resolution at one or more charges.
+
+    Returns ``results_ext``: a list (one per extension) of lists (one per charge)
+    of result dicts (or None where the window could not be fit), each augmented
+    with 'ext' and 'verdict'.
+    """
+    charges = _normalize_charges(charges)
+    results_ext = []
+    for ext in range(len(peaks_ext)):
+        s0 = double_gauss_popts[ext][0]
+        rows = []
+        for q in charges:
+            try:
+                res = resolution_at_charge(counts_ext[ext], centers_ext[ext],
+                                           peaks_ext[ext], q, window, gains[ext], s0)
+            except ValueError as exc:
+                if verbose:
+                    print(f'EXT {ext + 1}, q={q:g}: {exc}')
+                rows.append(None)
+                continue
+            res['ext'] = ext + 1
+            res['verdict'] = classify_resolution(res, sigma_well, sigma_limit, min_peak_frac)
+            rows.append(res)
+        results_ext.append(rows)
+    return results_ext
+
+
+_RESOLUTION_FIELDS = ['ext', 'q', 'window', 'n_peaks_fit', 'expected_peaks',
+                      'sigma_e', 'sigma_e_err', 'reduced_chi2', 'delta_aic', 'verdict']
+
+
+def _resolution_record(res):
+    return {
+        'ext': res['ext'], 'q': res['q'], 'window': res['window'],
+        'n_peaks_fit': res['n_components'], 'expected_peaks': res['expected_peaks'],
+        'sigma_e': res['sigma_e'], 'sigma_e_err': res['sigma_e_err'],
+        'reduced_chi2': res['reduced_chi2'], 'delta_aic': res['delta_aic'],
+        'verdict': res['verdict'],
+    }
+
+
+def format_resolution_table(results_ext):
+    """Format resolution results (from resolution_at_charge_ext) as an aligned table."""
+    headers = ['EXT', 'q [e-]', 'win', 'peaks', 'sigma [e-]', 'sig_err',
+               'red_chi2', 'dAIC', 'verdict']
+    cells = []
+    for rows in results_ext:
+        for res in rows:
+            if res is None:
+                continue
+            cells.append([
+                f'{res["ext"]}', f'{res["q"]:.0f}', f'{res["window"]:.0f}',
+                f'{res["n_components"]}/{res["expected_peaks"]}',
+                f'{res["sigma_e"]:.3f}', f'{res["sigma_e_err"]:.3f}',
+                f'{res["reduced_chi2"]:.2f}', f'{res["delta_aic"]:.0f}',
+                res['verdict'],
+            ])
+    widths = [max(len(h), *(len(row[i]) for row in cells)) if cells else len(h)
+              for i, h in enumerate(headers)]
+    fmt = lambda vals: '  '.join(v.rjust(widths[i]) for i, v in enumerate(vals))
+    lines = [fmt(headers), '-' * (sum(widths) + 2 * (len(widths) - 1))]
+    lines += [fmt(c) for c in cells]
+    return '\n'.join(lines)
+
+
+def summarize_resolution(results_ext, save_path=None):
+    """Print a per-extension/charge resolution table, optionally saving it as CSV."""
+    print('\n***********************************************************')
+    print('\nSingle-electron resolution summary:\n')
+    print(format_resolution_table(results_ext))
+
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        with save_path.open('w', encoding='utf-8', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=_RESOLUTION_FIELDS)
+            writer.writeheader()
+            for rows in results_ext:
+                for res in rows:
+                    if res is not None:
+                        writer.writerow(_resolution_record(res))
+        print(f'\nSaved resolution summary table (CSV) to {save_path}')
+
+    return results_ext
+
+
 #---------------- PLOTTING FUNCTIONS ----------------------------
 
 
@@ -556,9 +818,12 @@ def plot_all_peaks(counts_ext,
             ax.set_ylabel('N')
             if yscale!='linear':
                 ax.set_yscale(yscale)
-            ax.set_xlim(xlim)
-            if ylim!='none':
-                ax.set_ylim(ylim)
+            xlim_e = xlim[ext] if isinstance(xlim, list) else xlim
+            ylim_e = ylim[ext] if isinstance(ylim, list) else ylim
+            if xlim_e!='none':
+                ax.set_xlim(xlim_e)
+            if ylim_e!='none':
+                ax.set_ylim(ylim_e)
 
             # draw vertical lines and labels at each peak
             if draw_lines:
@@ -600,9 +865,12 @@ def plot_all_peaks(counts_ext,
             ax.set_ylabel('N')
             if yscale!='linear':
                 ax.set_yscale(yscale)
-            ax.set_xlim(xlim)
-            if ylim!='none':
-                ax.set_ylim(ylim)
+            xlim_e = xlim[ext] if isinstance(xlim, list) else xlim
+            ylim_e = ylim[ext] if isinstance(ylim, list) else ylim
+            if xlim_e!='none':
+                ax.set_xlim(xlim_e)
+            if ylim_e!='none':
+                ax.set_ylim(ylim_e)
             ax.set_title(f'EXT {ext + 1}')
 
             # draw vertical lines and labels at each peak
@@ -756,6 +1024,132 @@ def plot_nonlinearity(peaks_ext,
             plt.savefig(str(output_path), dpi=dpi)
             print(f'Saved plot to {output_path}')
         _finish_fig(show_plots)
+
+
+#---------------- Plot single-electron resolution windows ----------------------------
+_RESOLUTION_VERDICT_COLORS = {
+    'well resolved': 'tab:green', 'marginal': 'tab:orange', 'unresolved': 'tab:red',
+}
+
+
+def _draw_resolution_window(ax, res, sigma_well=0.25, sigma_limit=0.5):
+    """Draw one resolution window (data bars, comb components, comb sum, null,
+    and a verdict annotation) onto an existing Axes."""
+    xw, yw = res['xw'], res['yw']
+    bw = res['bin_width']
+    comb, _ = _make_comb_model(res['means'])
+    xf = np.linspace(res['lo'], res['hi'], 2000)
+
+    ax.bar(xw, yw, width=bw, align='center', color='0.8', edgecolor='none',
+           label='data', zorder=1)
+
+    sigma = res['comb_popt'][0]
+    amps = res['comb_popt'][1:]
+    for i, (amp, mu) in enumerate(zip(amps, res['means'])):
+        ax.plot(xf, _gauss_single(xf, amp, mu, sigma), color='tab:blue', lw=0.8,
+                alpha=0.7, zorder=2, label='components' if i == 0 else None)
+    ax.plot(xf, comb(xf, *res['comb_popt']), color='tab:red', lw=2.0, zorder=4,
+            label='n-Gaussian fit')
+    if res['null_popt'] is not None:
+        ax.plot(xf, _gauss_single(xf, *res['null_popt']), color='k', lw=1.3,
+                ls='--', zorder=3, label='single-Gaussian null')
+
+    verdict = res.get('verdict') or classify_resolution(res, sigma_well, sigma_limit)
+    color = _RESOLUTION_VERDICT_COLORS.get(verdict, 'k')
+    ax.set_xlabel(r'Charge ($e^-$)')
+    ax.set_ylabel('N')
+    txt = (rf'$\sigma$ = {res["sigma_e"]:.3f} $\pm$ {res["sigma_e_err"]:.3f} $e^-$ ($\sigma_0$ = {res["sigma_seed_e"]:.3f})'+'\n'
+           f'peaks fit: {res["n_components"]} of {res["expected_peaks"]} expected\n'
+           rf'reduced $\chi^2$ = {res["reduced_chi2"]:.2f}'
+           f'   $\\Delta$AIC = {res["delta_aic"]:.0f}\n'
+           f'verdict: {verdict.upper()}'
+           rf'  ($\sigma$<{sigma_well} resolved), <{sigma_limit} marginal')
+    ax.text(0.02, 0.97, txt, transform=ax.transAxes, va='top', ha='left',
+            fontsize=9, zorder=11,
+            bbox=dict(boxstyle='round', fc='white', ec=color, lw=1.5, alpha=0.85))
+    # Draw the legend last and force it above all data bars, fit curves, and the
+    # annotation box so it is never occluded.
+    leg = ax.legend(loc='upper right', fontsize=8)
+    leg.set_zorder(12)
+    return verdict
+
+
+def plot_resolution(results_ext, charges,
+                    individual_figsize=(8, 6.5), subplots_figsize=(13, 9),
+                    additional_title='',
+                    suptitle='Single-Electron Resolution',
+                    nimages=10,
+                    sigma_well=0.25, sigma_limit=0.5,
+                    plot_individual=False, plot_together=True,
+                    sharex=False, sharey=False,
+                    show_titles=True,
+                    save_plots=False, show_plots=True,
+                    fig_path='./', file='resolution', dpi=350):
+    """Plot the resolution windows from resolution_at_charge_ext.
+
+    ``plot_individual`` makes one figure per (extension, charge). ``plot_together``
+    makes one 2x2 figure per charge (one subplot per extension).
+    """
+    charges = _normalize_charges(charges)
+    fig_path = Path(fig_path)
+    if file != 'resolution':
+        base_name = file[:-5] + '_resolution'
+    else:
+        base_name = file
+    fig_name = fig_path / base_name
+    n_ext = len(results_ext)
+
+    if plot_individual:
+        for rows in results_ext:
+            for res in rows:
+                if res is None:
+                    continue
+                fig, ax = plt.subplots(figsize=individual_figsize,
+                                       constrained_layout=True)
+                _draw_resolution_window(ax, res, sigma_well, sigma_limit)
+                if show_titles:
+                    ax.set_title(
+                        f'{additional_title}{suptitle} (Nimages = {nimages}): '
+                        f'EXT {res["ext"]}, q = {res["q"]:.0f} $e^-$  '
+                        f'(window {res["lo"]:.0f}-{res["hi"]:.0f}, '
+                        f'{res["n_components"]}/{res["expected_peaks"]} peaks)',
+                        fontsize=11, pad=10)
+                if save_plots:
+                    output_path = fig_name.with_stem(
+                        fig_name.stem + f'_EXT{res["ext"]}_q{res["q"]:.0f}'
+                    ).with_suffix('.jpeg')
+                    plt.savefig(str(output_path), dpi=dpi)
+                    print(f'Saved plot to {output_path}')
+                _finish_fig(show_plots)
+
+    if plot_together:
+        for j, q in enumerate(charges):
+            present = [results_ext[e][j] for e in range(n_ext)
+                       if j < len(results_ext[e]) and results_ext[e][j] is not None]
+            if not present:
+                continue
+            fig, axs = plt.subplots(2, 2, figsize=subplots_figsize,
+                                    constrained_layout=True, sharex=sharex,
+                                    sharey=sharey)
+            axs = axs.flatten()
+            if show_titles:
+                fig.suptitle(f'{additional_title}{suptitle} at q = {q:g} $e^-$ '
+                             f'(Nimages = {nimages})')
+            for e in range(len(axs)):
+                res = results_ext[e][j] if e < n_ext and j < len(results_ext[e]) else None
+                if res is None:
+                    axs[e].set_visible(False)
+                    continue
+                _draw_resolution_window(axs[e], res, sigma_well, sigma_limit)
+                if show_titles:
+                    axs[e].set_title(f'EXT {res["ext"]}')
+            if save_plots:
+                output_path = fig_name.with_stem(
+                    fig_name.stem + f'_q{q:.0f}'
+                ).with_suffix('.jpeg')
+                plt.savefig(str(output_path), dpi=dpi)
+                print(f'Saved plot to {output_path}')
+            _finish_fig(show_plots)
 
 
 #---------------- UTILITY FUNCTIONS ----------------------------

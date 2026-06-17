@@ -1,0 +1,26 @@
+{
+    "study_name": "VR6_deltaV_vs_ext",
+    "x_label": "VR (V)",
+    "x_axis": "extension",
+    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies",
+    "series_label": "deltaV",
+    "plot_together": true,
+    "quantities": {
+        "gain_adu_per_e": {
+            "ylabel": "Gain (ADU/e-)",
+            "title_vs_ext": "Gain vs extension"
+        },
+        "noise_e": {
+            "ylabel": "Noise (e-)",
+            "title_vs_ext": "Noise vs extension"
+        },
+        "nonlinearity_at_500_e": {
+            "ylabel": "Nonlinearity at 500 e- (e-)",
+            "title_vs_ext": "Nonlinearity at 500 e- vs extension"
+        }
+    },
+    "datasets": [
+        {"x": -6, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-6/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_dbec0ad2/extension_summary.csv"},
+        {"x": -6, "series": "Increased", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR_6_Diego_params/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_11_stitched_ab2690ae/extension_summary.csv"}
+    ]
+}
