@@ -30,6 +30,8 @@ dependencies = [
     "matplotlib>=3.3.0",
     "scipy>=1.5.0",
     "astropy>=4.0",
+    "tqdm",
+    "pedestal_subtract @ git+https://github.com/abbychriss/pedestal_subtract.git",
 ]
 
 [project.optional-dependencies]

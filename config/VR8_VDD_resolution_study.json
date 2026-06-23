@@ -1,0 +1,32 @@
+{
+    "study_name": "VR8_VDD_resolution",
+    "x_label": "VDD (V)",
+    "invert_x": true,
+    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_study/resolution_meta",
+    "series_label": "Charge (e-)",
+    "series_column": "q",
+    "series_same_plot": false,
+    "uniform_series_style": true,
+    "quantities": {
+        "sigma_e": {
+            "ylabel": "Resolution sigma (e-)",
+            "title": "Resolution vs VDD"
+        },
+        "reduced_chi2": {
+            "ylabel": "Reduced $\\chi^2$",
+            "title": "Fit reduced $\\chi^2$ vs VDD"
+        },
+        "delta_aic": {
+            "ylabel": "$\\Delta$AIC",
+            "title": "$\\Delta$AIC vs VDD"
+        }
+    },
+    "datasets": [
+        {"x": -19.0, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-19/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_3552f8dd/resolution_summary.csv"},
+        {"x": -20.0, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-20/plots/cts_avg_img_L2_250x3500x500_1x1_L2_124_10_stitched_ee62e0f0/resolution_summary.csv"},
+        {"x": -20.5, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-20.5/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_93d5c75f/resolution_summary.csv"},
+        {"x": -21.5, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-21.5/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_da9899be/resolution_summary.csv"},
+        {"x": -22.5, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-22.5/plots/cts_avg_img_L2_250x3500x500_1x1_L2_124_10_stitched_3d7d0874/resolution_summary.csv"}
+    ]
+}
+

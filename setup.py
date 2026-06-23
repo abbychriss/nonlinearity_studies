@@ -32,6 +32,8 @@ setup(
         "matplotlib>=3.8.0",
         "scipy>=1.11.0",
         "astropy>=5.3",
+        "tqdm",
+        "pedestal_subtract @ git+https://github.com/abbychriss/pedestal_subtract.git",
     ],
     entry_points={
         "console_scripts": [

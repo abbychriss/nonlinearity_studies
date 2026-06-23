@@ -11,7 +11,10 @@ independent variable, e.g. standard vs. increased deltaV at the same VR). Series
 share the extension colour and are distinguished by linestyle; when there is
 only one x value (each line is a lone point, so the linestyle is invisible) they
 are distinguished by marker instead. They can be overlaid on one figure or split
-onto separate figures.
+onto separate figures (``series_same_plot``). When split, set
+``"uniform_series_style": true`` so every per-series figure uses the same solid
+line and circle marker instead of cycling styles that would make the separate
+figures look needlessly different.
 
 Set ``"x_axis": "extension"`` to flip the orientation: extension goes on the
 x-axis, each series becomes its own coloured line, and the independent-variable
@@ -64,8 +67,10 @@ CONFIG_KEYS = {
     "quantities",
     "datasets",
     "series_label",
+    "series_column",
     "series_same_plot",
     "series_styles",
+    "uniform_series_style",
     "colors",
     "dpi",
     "show_plots",
@@ -107,8 +112,10 @@ def load_config(config_path):
     config.setdefault("x_axis", "value")
     config.setdefault("invert_x", False)
     config.setdefault("series_label", None)
+    config.setdefault("series_column", None)
     config.setdefault("series_same_plot", True)
     config.setdefault("series_styles", None)
+    config.setdefault("uniform_series_style", False)
     config.setdefault("colors", None)
     config.setdefault("dpi", 350)
     config.setdefault("show_plots", True)
@@ -136,21 +143,71 @@ def load_config(config_path):
     return config
 
 
+def _resolve_quantity_columns(df, quantities, table):
+    """Ensure each configured quantity is present as a column named by its key.
+
+    By default a quantity key must match a CSV header. A quantity may instead
+    name its source column explicitly via an absolute 0-based ``"column"`` index
+    into the CSV; the addressed column's values are then exposed under the
+    quantity key so the rest of the pipeline can refer to it by key regardless of
+    the header's actual name. This makes it easy to pick out just the columns you
+    want to plot without retyping their headers.
+    """
+    n_cols = len(df.columns)
+    for key, spec in quantities.items():
+        index = spec.get("column") if isinstance(spec, dict) else None
+        if index is None:
+            if key not in df.columns:
+                raise ValueError(
+                    f"Quantity {key!r} is not a column in {table} and no 'column' "
+                    f"index was given. Available columns: {', '.join(map(str, df.columns))}."
+                )
+            continue
+        if not isinstance(index, int) or isinstance(index, bool):
+            raise ValueError(
+                f"Quantity {key!r} 'column' must be an integer index, got {index!r}."
+            )
+        if not -n_cols <= index < n_cols:
+            raise ValueError(
+                f"Quantity {key!r} 'column' index {index} is out of range for {table} "
+                f"({n_cols} columns: {', '.join(map(str, df.columns))})."
+            )
+        df[key] = df.iloc[:, index]
+    return df
+
+
 def load_datasets(config):
     """Read every table, tag rows with x (and series), return one tidy frame.
 
     A dataset may carry ``"exclude_ext": [...]`` to drop specific extensions from
     that dataset only (e.g. an extension that misbehaves at one operating point),
     leaving those extensions intact in the other datasets.
+
+    The series dimension comes from one of two places. Normally it is a per-dataset
+    tag (``"series": "-8"``), constant across the whole table. Alternatively, when
+    ``"series_column"`` is set in the config, the series is read from that CSV
+    column instead, so a table that varies a second parameter within itself (e.g.
+    ``resolution_summary.csv`` with one row per charge ``q``) is split into one
+    series per distinct value of that column. The two are mutually exclusive;
+    ``series_column`` takes precedence if both are present.
     """
+    series_column = config.get("series_column")
     records = []
     for dataset in config["datasets"]:
         df = pd.read_csv(dataset["table"]).sort_values("ext")
+        df = _resolve_quantity_columns(df, config["quantities"], dataset["table"])
         exclude_ext = dataset.get("exclude_ext")
         if exclude_ext:
             df = df[~df["ext"].isin(exclude_ext)]
         df["x"] = dataset["x"]
-        if "series" in dataset:
+        if series_column:
+            if series_column not in df.columns:
+                raise ValueError(
+                    f"series_column {series_column!r} not found in {dataset['table']}. "
+                    f"Available columns: {', '.join(map(str, df.columns))}."
+                )
+            df["series"] = df[series_column]
+        elif "series" in dataset:
             df["series"] = dataset["series"]
         records.append(df)
 
@@ -169,9 +226,14 @@ def _color_for(ext, extensions, colors):
     return palette[extensions.index(ext) % len(palette)]
 
 
-def _style_for(series, series_list, series_styles):
-    """Resolve a series' linestyle from a dict mapping or a cycled default."""
-    if series is None:
+def _style_for(series, series_list, series_styles, uniform=False):
+    """Resolve a series' linestyle from a dict mapping or a cycled default.
+
+    With ``uniform`` set, every series gets the default solid line; this is for
+    split plots (one series per figure), where cycling styles only makes the
+    separate figures look gratuitously different.
+    """
+    if series is None or uniform:
         return "-"
     if isinstance(series_styles, dict) and series in series_styles:
         return series_styles[series]
@@ -179,15 +241,16 @@ def _style_for(series, series_list, series_styles):
     return cycle_styles[series]
 
 
-def _marker_for(series, series_list, single_x):
+def _marker_for(series, series_list, single_x, uniform=False):
     """Resolve a series' marker.
 
     Markers only differ between series when there is a single x value: each line
     is then a lone point and the linestyle is invisible, so the marker is the
     only thing distinguishing one series from another. Otherwise every line uses
-    the default round marker and series are told apart by linestyle.
+    the default round marker and series are told apart by linestyle. With
+    ``uniform`` set, every series gets the default marker regardless.
     """
-    if not single_x or series is None:
+    if uniform or not single_x or series is None:
         return "o"
     cycle_markers = dict(zip(series_list, cycle(DEFAULT_MARKERS)))
     return cycle_markers[series]
@@ -296,7 +359,8 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
                     continue
                 style = _style_for(series, series_list, config["series_styles"])
                 marker = _marker_for(series, series_list, single_x)
-                _draw_line(ax, sub, column, color, style, f"EXT{ext} ({series})",
+                tag = _series_tag(config["series_label"] or "series", series)
+                _draw_line(ax, sub, column, color, style, f"EXT{ext} ({tag})",
                            fit_line, fit_lookup.get((ext, series)), marker=marker)
         else:
             sub = ext_rows.sort_values("x")
@@ -304,8 +368,9 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
                 continue
             series = group_series if group_series is not None else (
                 series_list[0] if has_series else None)
-            style = _style_for(series, series_list, config["series_styles"])
-            marker = _marker_for(series, series_list, single_x)
+            uniform = config["uniform_series_style"]
+            style = _style_for(series, series_list, config["series_styles"], uniform=uniform)
+            marker = _marker_for(series, series_list, single_x, uniform=uniform)
             _draw_line(ax, sub, column, color, style, f"EXT{ext}",
                        fit_line, fit_lookup.get((ext, series)), marker=marker)
 
@@ -372,6 +437,25 @@ def plot_all_together(data, config, fits):
     out_path = Path(config["output_dir"]) / f"{config['study_name']}_subplots.jpeg"
     fig.savefig(out_path, dpi=config["dpi"])
     return out_path
+
+
+def _series_tag(label, value):
+    """Compact series value for a legend entry.
+
+    Numeric series are formatted without trailing zeros and, when the label
+    carries a unit (``"Charge (e-)"``), gain that unit directly (200 -> "200e-");
+    the label name itself is omitted since the legend already groups by series.
+    Non-numeric series (e.g. ``"Standard"``) are used verbatim.
+    """
+    try:
+        text = f"{float(value):g}"
+    except (TypeError, ValueError):
+        return str(value)
+    if label:
+        match = re.fullmatch(r"\s*(.*?)\s*\(([^)]*)\)\s*", label)
+        if match:
+            text += match.group(2)
+    return text
 
 
 def _labeled_value(label, value):

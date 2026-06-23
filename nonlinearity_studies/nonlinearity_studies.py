@@ -906,9 +906,34 @@ def plot_all_peaks(counts_ext,
 
 #---------------- Plot nonlinearity ----------------------------
 # xlim and ylim can be 'default', 'none', or tuple(ylim_bottom, ylim_top)
+def _resolve_nonlinearity_xbounds(xlim_e, peak_charge_e, fit_range_right):
+    """Resolve an extension's x-limits to concrete (left, right) bounds.
+
+    Mirrors how plot_nonlinearity resolves xlim for display, so the auto ylim is
+    measured over exactly the x-range that will be shown.
+    """
+    if xlim_e == 'default':
+        return -100.0, float(fit_range_right) + 500.0
+    if xlim_e == 'none':
+        x = np.asarray(peak_charge_e, dtype=float)
+        return float(np.min(x)), float(np.max(x))
+    left, right = xlim_e
+    return float(left), float(right)
+
+
+def _auto_nonlinearity_ylim(peak_charge_e, charge_minus_npeak, xbounds, pad=10.0):
+    """[min - pad, max + pad] of the y values whose x falls within xbounds."""
+    x = np.asarray(peak_charge_e, dtype=float)
+    y = np.asarray(charge_minus_npeak, dtype=float)
+    left, right = xbounds
+    mask = (x >= left) & (x <= right)
+    yv = y[mask] if np.any(mask) else y
+    return float(np.min(yv)) - pad, float(np.max(yv)) + pad
+
+
 def plot_nonlinearity(peaks_ext,
-                      parabola_coeffs, 
-                      peak_charge_e_ext, 
+                      parabola_coeffs,
+                      peak_charge_e_ext,
                       charge_minus_npeak_ext,
                       fit_range_right_ext,
                       xlim='default', ylim='default',
@@ -940,6 +965,23 @@ def plot_nonlinearity(peaks_ext,
     if type(fit_range_right_ext) is not list:
         fit_range_right_ext = [fit_range_right_ext]*len(peaks_ext)
 
+    # Precompute auto ylims: per extension, [min-10, max+10] of the nonlinearity
+    # points within the displayed xlim. With sharey, every extension uses the
+    # global min/max (which need not come from the same extension).
+    auto_ylims = None
+    if ylim == 'auto':
+        auto_ylims = []
+        for ext in range(len(peak_charge_e_ext)):
+            xlim_e = xlim[ext] if isinstance(xlim, list) else xlim
+            xbounds = _resolve_nonlinearity_xbounds(
+                xlim_e, peak_charge_e_ext[ext], fit_range_right_ext[ext])
+            auto_ylims.append(_auto_nonlinearity_ylim(
+                peak_charge_e_ext[ext], charge_minus_npeak_ext[ext], xbounds))
+        if sharey:
+            g_lo = min(lo for lo, _ in auto_ylims)
+            g_hi = max(hi for _, hi in auto_ylims)
+            auto_ylims = [(g_lo, g_hi)] * len(auto_ylims)
+
     if plot_individual:
         for ext, peaks in enumerate(peaks_ext):
             fig, ax = plt.subplots(1, 1, figsize=individual_figsize, constrained_layout=True)
@@ -961,7 +1003,9 @@ def plot_nonlinearity(peaks_ext,
             ax.set_xlabel(r'Measured Pixel Charge ($e^-$)')
             ax.set_ylabel(r'Measured Pixel Charge - Peak n. ($e^-$) ')
 
-            if ylim_e=='default':
+            if ylim_e=='auto':
+                ax.set_ylim(auto_ylims[ext])
+            elif ylim_e=='default':
                 fit_idx = int(np.searchsorted(peak_charge_e, fit_range_right))
                 ax.set_ylim(min(charge_minus_npeak)-10, max(charge_minus_npeak[:fit_idx])+5)
             elif ylim_e!='none':
@@ -1001,7 +1045,9 @@ def plot_nonlinearity(peaks_ext,
             ax.set_xlabel(r'Measured Pixel Charge ($e^-$)')
             ax.set_ylabel(r'Measured Pixel Charge - Peak n. ($e^-$) ')
 
-            if ylim_e=='default':
+            if ylim_e=='auto':
+                ax.set_ylim(auto_ylims[ext])
+            elif ylim_e=='default':
                 fit_idx = int(np.searchsorted(peak_charge_e, fit_range_right))
                 ax.set_ylim(min(charge_minus_npeak)-10, max(charge_minus_npeak[:fit_idx])+5)
             elif ylim_e!='none':
@@ -1063,7 +1109,7 @@ def _draw_resolution_window(ax, res, sigma_well=0.25, sigma_limit=0.5):
            rf'reduced $\chi^2$ = {res["reduced_chi2"]:.2f}'
            f'   $\\Delta$AIC = {res["delta_aic"]:.0f}\n'
            f'verdict: {verdict.upper()}'
-           rf'  ($\sigma$<{sigma_well} resolved), <{sigma_limit} marginal')
+           rf'  ($\sigma$<{sigma_well} resolved, <{sigma_limit} marginal)')
     ax.text(0.02, 0.97, txt, transform=ax.transAxes, va='top', ha='left',
             fontsize=9, zorder=11,
             bbox=dict(boxstyle='round', fc='white', ec=color, lw=1.5, alpha=0.85))

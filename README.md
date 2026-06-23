@@ -4,13 +4,14 @@ A Python package for analyzing nonlinearity in CCDs.
 
 ## Overview
 
-- **Pedestal Subtraction**: Independently computes and subtracts pedestal along specified axis, with optional caching so the (slow) computation only runs once per parameter set
+- **Image Stitching**: Combine multi-extension FITS images row-wise and run analysis on stitched image
+- **Pedestal Subtraction**: Independently computes and subtracts pedestal along specified axis
 - **Noise & Gain Calculation**: Determines noise and gain from data and converts to e-
 - **Peak Finder**: Finds all electron peaks in charge distribution
-- **Nonlinearity Computation**: Quantifies detector response linearity as a function of charge
-- **Single-Electron Resolution**: Quantifies how well single-electron peaks are resolved at a given charge by fitting a constrained *n*-Gaussian comb in a local window and reporting the shared peak width σ (e-), goodness of fit, and a resolved/marginal/unresolved verdict
-- **Visualization**: Creates histograms of charge distribution and plots nonlinearity curve, with per-plot control over individual vs. 2×2 subplot layouts, figure sizes, axis sharing, scales, limits, and titles
-- **Image Stitching**: Combine multi-extension FITS images and run analysis on stitched image
+- **Nonlinearity Computation**: Quantifies nonlinearity as a function of charge by fitting nonlinearity curve to parabola
+- **Single-Electron Resolution**: Quantifies single electron resolution at a given charge *q* by fitting *n* Gaussians in window around *q* and reporting the shared peak width σ (e-), goodness of fit, and a resolved/marginal/unresolved verdict
+- **Visualization**: Plots zero-one electron peaks in ADU and e-, histograms of charge distribution at any q with peak labels, and nonlinearity curves. Can be plotted per extension or together as 2×2 subplot. Control figure sizes, axis sharing, scales, limits, titles, etc. using config.
+- **Meta analysis**: Plot results of nonlinearity analysis (noise, gain, resolution, nonlinearity) as function of image parameter using summary csv tables produced during individual analyses
 
 ## Installation
 
@@ -55,6 +56,8 @@ pip install .
 - matplotlib >= 3.8.0
 - scipy >= 1.11.0
 - astropy >= 5.3
+- tqdm
+- [`pedestal_subtract`](https://github.com/abbychriss/pedestal_subtract) (installed automatically from git)
 
 ## Usage
 
@@ -270,7 +273,7 @@ EXT 3: changepoint fit_range_right = 693 e-  (var(a) cross-check = 100 e-, rel d
   WARNING: low-confidence fit_range_right on EXT [3] (changepoint and var(a) disagree by > 15%); inspect the nonlinearity plot(s).
 ```
 
-The same options can be written in JSON using argparse destination names. A reasonably complete config might look like:
+The same options can be written in JSON using argparse destination names. A config might look like:
 
 ```json
 {
@@ -309,7 +312,7 @@ The same options can be written in JSON using argparse destination names. A reas
   "peak_finder_widths": 0.9,
   "peak_finder_buffers": [3, 3, 3, 3],
   "peak_finder_prominences": null,
-  "fit_range_right": [1000, 800, 1100, 1100],
+  "fit_range_right": "auto",
 
   "plot_zero_one_individual": false,
   "plot_zero_one_together": true,
@@ -347,13 +350,13 @@ The same options can be written in JSON using argparse destination names. A reas
 Then run:
 
 ```bash
-run-nonlinearity-studies -j config/presentation_config.json
+run-nonlinearity-studies -j config/default_nonlinearity.json
 ```
 
 Explicit command-line arguments override JSON values, so this also works:
 
 ```bash
-run-nonlinearity-studies -j config/presentation_config.json --no-save_plots
+run-nonlinearity-studies -j config/default_nonlinearity.json --no-save_plots
 ```
 
 ### Pedestal-subtraction caching
@@ -401,16 +404,16 @@ Each plotting function accepts `plot_individual` and `plot_together` toggles, in
 
 ### Utility
 
-- `stitch_fits(file_path, **kwargs)`: Stitch multiple FITS files across each extension. All files must have the same shape. Prints progress (`0/N`, `5/N`, ..., `N/N`).
+- `stitch_fits(file_path, **kwargs)`: Stitch multiple FITS files across each extension. All files must have the same shape.
 
 ## Structure
 
 ```
 nonlinearity_studies/                # Repository root
 ├── config/                          # Example JSON configs
-│   ├── presentation_config.json
-│   ├── report_config.json
-│   └── resolution_study.json
+│   ├── default_nonlinearity.json
+│   ├── resolution_study.json
+│   └── ...
 ├── examples/                        # Examples directory
 │   └── images/                      # Sample FITS/FZ images
 ├── nonlinearity_studies/            # Main package directory
@@ -426,7 +429,7 @@ nonlinearity_studies/                # Repository root
 └── README.md                        # This file
 ```
 
-Generated output (pedestal-subtracted FITS caches, the `plots/` directory, and `*.jpeg`/`*.jpg` figures) is git-ignored and not shown above.
+Generated output (pedestal-subtracted FITS caches, the `plots/` directory, and `*.jpeg` figures) is git-ignored and not shown above.
 
 
 ## License

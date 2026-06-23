@@ -215,6 +215,18 @@ def _int_or_auto(s):
     return int(s)
 
 
+def _lim_token(s):
+    """argparse type for an xlim/ylim element: a float, or a sentinel string.
+
+    Lets the limits accept the string sentinels 'auto'/'default'/'none' (e.g. from
+    a JSON config, where argparse applies this type to a string default) alongside
+    numeric bounds.
+    """
+    if isinstance(s, str) and s.lower() in ('auto', 'default', 'none'):
+        return s.lower()
+    return float(s)
+
+
 # Args that should NOT influence the run-identity hash (operational/output flags only).
 _RUN_HASH_EXCLUDE = {
     'config', 'json', 'verbose', 'save_plots', 'save_csv', 'output_dir', 'show_plots',
@@ -251,6 +263,7 @@ def _parse_lim(raw, n_ext=4):
 
     Accepts:
       None                          -> 'default'
+      'auto' / 'default' / 'none'   -> passed through (string sentinels)
       [l, r]                        -> (l, r)  applied to all extensions
       [[l1,r1],[l2,r2],...]         -> [(l1,r1), ...] one per extension (JSON format)
       [[l1,r1], null, ...]          -> [(l1,r1), 'none', ...]  null = auto for that extension
@@ -258,6 +271,14 @@ def _parse_lim(raw, n_ext=4):
     """
     if raw is None:
         return 'default'
+    # A lone sentinel string from CLI arrives wrapped in a list (nargs='+'); unwrap it.
+    if isinstance(raw, (list, tuple)) and len(raw) == 1 and isinstance(raw[0], str):
+        raw = raw[0]
+    if isinstance(raw, str):
+        allowed = {'auto', 'default', 'none'}
+        if raw not in allowed:
+            raise ValueError(f'xlim/ylim string must be one of {sorted(allowed)}, got {raw!r}')
+        return raw
     # Per-extension form: a length-n_ext list whose entries are each a [left, right]
     # pair or null. null means "auto for that extension" (-> 'none'). Detect it from
     # any pair/null entry, so a leading null (e.g. [null, [0,40], ...]) still counts.
@@ -531,13 +552,13 @@ def main(args=None):
 
     # Fit parabola to nonlinearity curve
     peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs, _ = get_nonlinearity_ext(peaks_ext,
-                                                                                                        centers_ext, 
-                                                                                                        pedestals, 
-                                                                                                        gains, 
-                                                                                                        fit_range_right_ext, 
-                                                                                                        do_convert_to_electrons=False,
-                                                                                                        fit_bounds_low=-100, 
-                                                                                                        fit_bounds_high=100)
+                                                                                        centers_ext, 
+                                                                                        pedestals, 
+                                                                                        gains, 
+                                                                                        fit_range_right_ext, 
+                                                                                        do_convert_to_electrons=False,
+                                                                                        fit_bounds_low=-100, 
+                                                                                        fit_bounds_high=100)
 
     # Per-extension summary table: gain (ADU/e-), noise (e-), and nonlinearity at the same
     # charge(s) requested via --get_nonlinearity_at (falling back to 500 e- when none given).
@@ -891,11 +912,11 @@ You can enable any combination of steps using flags below.""",
                         default=_config_default(config, 'plot_zero_one_subplots_figsize', [10, 8]),
                         metavar=('W', 'H'),
                         help="Figure size (width height) for combined 2x2 zero/one peak subplot")
-    parser.add_argument("--plot_all_peaks_xlim", nargs='+', type=float,
+    parser.add_argument("--plot_all_peaks_xlim", nargs='+', type=_lim_token,
                         default=_config_default(config, 'plot_all_peaks_xlim', None),
                         metavar='VAL',
                         help="X-axis limits for all-peaks plot. Provide 2 values (LEFT RIGHT) to apply to all extensions, or 8 values (L1 R1 L2 R2 L3 R3 L4 R4) for per-extension limits. Defaults to full histogram range if not set.")
-    parser.add_argument("--plot_all_peaks_ylim", nargs='+', type=float,
+    parser.add_argument("--plot_all_peaks_ylim", nargs='+', type=_lim_token,
                         default=_config_default(config, 'plot_all_peaks_ylim', None),
                         metavar='VAL',
                         help="Y-axis limits for all-peaks plot. Provide 2 values (BOTTOM TOP) to apply to all extensions, or 8 values (B1 T1 B2 T2 B3 T3 B4 T4) for per-extension limits. Defaults to auto if not set.")
@@ -918,11 +939,11 @@ You can enable any combination of steps using flags below.""",
                         default=_config_default(config, 'plot_nonlinearity_subplots_figsize', [9, 7]),
                         metavar=('W', 'H'),
                         help="Figure size (width height) for combined 2x2 nonlinearity subplot")
-    parser.add_argument("--plot_nonlinearity_xlim", nargs='+', type=float,
+    parser.add_argument("--plot_nonlinearity_xlim", nargs='+', type=_lim_token,
                         default=_config_default(config, 'plot_nonlinearity_xlim', None),
                         metavar='VAL',
                         help="X-axis limits for nonlinearity plot. Provide 2 values (LEFT RIGHT) to apply to all extensions, or 8 values (L1 R1 L2 R2 L3 R3 L4 R4) for per-extension limits. Defaults to auto if not set.")
-    parser.add_argument("--plot_nonlinearity_ylim", nargs='+', type=float,
+    parser.add_argument("--plot_nonlinearity_ylim", nargs='+', type=_lim_token,
                         default=_config_default(config, 'plot_nonlinearity_ylim', None),
                         metavar='VAL',
                         help="Y-axis limits for nonlinearity plot. Provide 2 values (BOTTOM TOP) to apply to all extensions, or 8 values (B1 T1 B2 T2 B3 T3 B4 T4) for per-extension limits. Defaults to auto if not set.")
