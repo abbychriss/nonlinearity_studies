@@ -5,7 +5,7 @@ A Python package for analyzing nonlinearity in CCDs.
 ## Overview
 
 - **Image Stitching**: Combine multi-extension FITS images row-wise and run analysis on stitched image
-- **Pedestal Subtraction**: Independently computes and subtracts pedestal along specified axis
+- **Pedestal Subtraction**: Independently computes and subtracts pedestal along specified axis (using my pedestal_subtract package)
 - **Noise & Gain Calculation**: Determines noise and gain from data and converts to e-
 - **Peak Finder**: Finds all electron peaks in charge distribution
 - **Nonlinearity Computation**: Quantifies nonlinearity as a function of charge by fitting nonlinearity curve to parabola
@@ -109,24 +109,23 @@ plot_nonlinearity(
 
 There are three ways to run the analysis:
 
-**1. As a Python module** (works during development):
-```bash
-python -m nonlinearity_studies.run_nonlinearity_studies [OPTIONS] <file_string>
-```
-
-**2. As a direct executable** (requires executable permissions - should be activated automatically but if not run `chmod +x nonlinearity_studies/run_nonlinearity_studies.py`):
-
-```bash
-./nonlinearity_studies/run_nonlinearity_studies.py [OPTIONS] <file_string>
-```
-
-**3. As a console script** (after pip installation):
+**1. As a console script** (after pip installation):
 
 ```bash
 run-nonlinearity-studies [OPTIONS] <file_string>
 ```
-
 You can also put `file_string` and any option below in a JSON file and run with `-j path/to/config.json`. Every boolean flag has a matching `--no-<flag>` variant for overriding a JSON-config `true` from the command line.
+
+**2. As a Python module** (works during development):
+```bash
+python -m nonlinearity_studies.run_nonlinearity_studies [OPTIONS] <file_string>
+```
+
+**3. As a direct executable** (requires executable permissions - should be activated automatically but if not run `chmod +x nonlinearity_studies/run_nonlinearity_studies.py`):
+
+```bash
+./nonlinearity_studies/run_nonlinearity_studies.py [OPTIONS] <file_string>
+```
 
 #### Options
 
