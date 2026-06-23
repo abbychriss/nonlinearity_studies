@@ -5,7 +5,11 @@ channels:
 dependencies:
   - python=3.13
   - numpy>=1.26.0
-  - matplotlib>=3.8.0
+  # Pin to 3.10.8 (the version in the known-good uchicago-env). matplotlib 3.11's
+  # macOS backend regressed: figures duplicate/re-open in a show loop and plt.close
+  # raises "SystemError: NULL object passed to Py_BuildValue". 3.10.8 renders
+  # crisply on Retina and blocks cleanly on plt.show().
+  - matplotlib=3.10.8
   - scipy>=1.11.0
   - astropy>=5.3
   - tqdm

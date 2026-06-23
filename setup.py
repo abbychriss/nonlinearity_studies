@@ -29,7 +29,9 @@ setup(
     python_requires=">=3.8",
     install_requires=[
         "numpy>=1.26.0",
-        "matplotlib>=3.8.0",
+        # Cap below 3.11: its macOS backend regressed (figures duplicate in a show
+        # loop; plt.close raises a SystemError). 3.10.x is crisp and stable.
+        "matplotlib>=3.8.0,<3.11",
         "scipy>=1.11.0",
         "astropy>=5.3",
         "tqdm",

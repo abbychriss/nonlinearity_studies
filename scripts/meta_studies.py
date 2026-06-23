@@ -32,24 +32,10 @@ files are named.
 
 import argparse
 import json
-import os
 import re
 from glob import glob
 from itertools import cycle
 from pathlib import Path
-
-import matplotlib
-
-# matplotlib's native macOS backend mishandles showing many figures one-by-one in
-# a loop: closing a window doesn't reliably drop the figure, so the next plt.show()
-# re-raises stale ones, and plt.close() trips a backend bug ("SystemError: NULL
-# object passed to Py_BuildValue"). TkAgg blocks cleanly on each plt.show() with no
-# such workarounds. Prefer it unless the user pinned a backend via MPLBACKEND.
-if not os.environ.get("MPLBACKEND") and matplotlib.get_backend().lower() == "macosx":
-    try:
-        matplotlib.use("TkAgg")
-    except Exception:
-        pass  # fall back to the default backend if Tk isn't available
 
 import matplotlib.pyplot as plt
 import numpy as np
