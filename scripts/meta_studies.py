@@ -33,6 +33,7 @@ files are named.
 import argparse
 import json
 import re
+from glob import glob
 from itertools import cycle
 from pathlib import Path
 
@@ -178,6 +179,26 @@ def _resolve_quantity_columns(df, quantities, table):
     return df
 
 
+def _resolve_table_path(table):
+    """Expand a dataset table path, which may contain glob wildcards (``*``, ``?``).
+
+    The path is supplied by the config and often points at an auto-named plots
+    subdirectory (e.g. ``plots/avg*/extension_summary.csv``), so a wildcard saves
+    the user from pasting the full hashed directory name. Exactly one file must
+    match: zero matches or an ambiguous several are raised as errors rather than
+    silently picking one. A path with no wildcard is returned as-is when it exists.
+    """
+    matches = sorted(glob(table, recursive=True))
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise ValueError(f"No file matches table path: {table!r}")
+    raise ValueError(
+        f"Table path {table!r} is ambiguous; {len(matches)} files match: "
+        f"{', '.join(matches)}. Make the pattern more specific."
+    )
+
+
 def load_datasets(config):
     """Read every table, tag rows with x (and series), return one tidy frame.
 
@@ -196,8 +217,9 @@ def load_datasets(config):
     series_column = config.get("series_column")
     records = []
     for dataset in config["datasets"]:
-        df = pd.read_csv(dataset["table"]).sort_values("ext")
-        df = _resolve_quantity_columns(df, config["quantities"], dataset["table"])
+        table = _resolve_table_path(dataset["table"])
+        df = pd.read_csv(table).sort_values("ext")
+        df = _resolve_quantity_columns(df, config["quantities"], table)
         exclude_ext = dataset.get("exclude_ext")
         if exclude_ext:
             df = df[~df["ext"].isin(exclude_ext)]
