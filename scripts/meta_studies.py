@@ -32,10 +32,24 @@ files are named.
 
 import argparse
 import json
+import os
 import re
 from glob import glob
 from itertools import cycle
 from pathlib import Path
+
+import matplotlib
+
+# matplotlib's native macOS backend mishandles showing many figures one-by-one in
+# a loop: closing a window doesn't reliably drop the figure, so the next plt.show()
+# re-raises stale ones, and plt.close() trips a backend bug ("SystemError: NULL
+# object passed to Py_BuildValue"). TkAgg blocks cleanly on each plt.show() with no
+# such workarounds. Prefer it unless the user pinned a backend via MPLBACKEND.
+if not os.environ.get("MPLBACKEND") and matplotlib.get_backend().lower() == "macosx":
+    try:
+        matplotlib.use("TkAgg")
+    except Exception:
+        pass  # fall back to the default backend if Tk isn't available
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -293,17 +307,18 @@ def _save_figure(config, column, suffix=""):
 
 
 def _finish_figure(fig, config):
-    """Display one figure on its own (blocking) when showing, then close it.
+    """Display one figure (blocking) when showing, else close it to free memory.
 
-    Showing and closing a single figure at a time makes them pop up one by one and
-    keeps pyplot's registry holding only the current figure, so each plt.show()
-    raises just that window instead of re-raising every earlier one (which
-    interactive backends would otherwise duplicate). When not showing, the figure
-    is closed immediately to free memory.
+    Each figure is built and shown before the next is created, so plt.show()
+    blocks here until the window is closed and the figures appear one at a time.
+    On a well-behaved interactive backend (see the backend selection at import)
+    closing the window also drops the figure from pyplot, so no manual plt.close()
+    is needed in the show path.
     """
     if config["show_plots"]:
         plt.show()
-    plt.close(fig)
+    else:
+        plt.close(fig)
 
 
 def _fit_enabled(spec, config):
