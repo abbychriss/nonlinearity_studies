@@ -316,14 +316,35 @@ def main(args=None):
 
     file_path = Path(args.file_string)
 
-    if not args.stitch_fits:
-        if not file_path.is_absolute():
-            # For relative paths, find them from current directory
-            if not file_path.exists():
-                # Try common search patterns
-                for search_path in Path('.').rglob(file_path.name):
-                    file_path = search_path
-                    break
+    if not args.stitch_fits and not file_path.exists():
+        # The path doesn't exist as typed. Only fall back to a tree-wide search when the
+        # user passed a BARE filename (no directory component) -- that is the intended
+        # convenience. A path that includes directories (or is absolute) is taken
+        # literally: if it doesn't exist we error out rather than silently analyzing a
+        # different same-named file elsewhere in the tree. The old code grabbed the FIRST
+        # rglob match of the basename, so a wrong or nonexistent path such as
+        # 'examples/images/VR-3/stitched-fits/avg_..._stitched.fits' was silently
+        # resolved to the identically named file under VR-6 and the wrong image was
+        # analyzed.
+        is_bare_name = (not file_path.is_absolute()) and str(file_path.parent) == '.'
+        if not is_bare_name:
+            print(f'\nError: file not found: {args.file_string}\n')
+            sys.exit(1)
+
+        matches = sorted(set(Path('.').rglob(file_path.name)))
+        if len(matches) == 1:
+            print(f'Note: "{args.file_string}" not found in the current directory; '
+                  f'using the only file matching by name: {matches[0]}')
+            file_path = matches[0]
+        elif not matches:
+            print(f'\nError: file not found: {args.file_string}\n')
+            sys.exit(1)
+        else:
+            listed = '\n  '.join(str(m) for m in matches)
+            print(f'\nError: "{args.file_string}" not found, and multiple files are named '
+                  f'"{file_path.name}":\n  {listed}\n'
+                  f'Pass the exact path to the one you want.\n')
+            sys.exit(1)
 
     # Get values from argparse arguments
     do_stitch_images = args.stitch_fits
@@ -645,19 +666,20 @@ def main(args=None):
                             dpi=350)
 
     if do_plot_all_peaks:
-        plot_all_peaks_range_left = np.min(np.array(hist_ranges).flatten())
-        plot_all_peaks_range_right = np.max(np.array(hist_ranges).flatten())
-        xlim_all_peaks = (_parse_lim(args.plot_all_peaks_xlim, n_ext=len(data_ext))
-                          if args.plot_all_peaks_xlim is not None
-                          else (plot_all_peaks_range_left, plot_all_peaks_range_right))
-        ylim_all_peaks = (_parse_lim(args.plot_all_peaks_ylim, n_ext=len(data_ext))
-                          if args.plot_all_peaks_ylim is not None else 'none')
+        # Only override the all-peaks x/y limits when the user passes them on the CLI.
+        # When a limit flag is absent, omit it so plot_all_peaks' own default applies
+        # (its xlim default is the 500-510 e- window) instead of forcing the full
+        # histogram range here.
+        all_peaks_limit_kwargs = {}
+        if args.plot_all_peaks_xlim is not None:
+            all_peaks_limit_kwargs['xlim'] = _parse_lim(args.plot_all_peaks_xlim, n_ext=len(data_ext))
+        if args.plot_all_peaks_ylim is not None:
+            all_peaks_limit_kwargs['ylim'] = _parse_lim(args.plot_all_peaks_ylim, n_ext=len(data_ext))
 
         plot_all_peaks(counts_ext,
                     peaks_ext,
                     centers_ext,
-                    xlim=xlim_all_peaks,
-                    ylim=ylim_all_peaks,
+                    **all_peaks_limit_kwargs,
                     yscale=args.plot_all_peaks_yscale,
                     plot_individual=args.plot_all_peaks_individual,
                     plot_together=args.plot_all_peaks_together,
@@ -844,7 +866,7 @@ You can enable any combination of steps using flags below.""",
                        default=_config_default(config, 'bin_factor', 10),
                         help="Number of histogram bins per electron used in the all-peaks histogram. Also controls peak_finder_widths conversion (electrons -> bins) and the buffer math (distance = bin_factor - buffer). Higher = finer resolution but more sensitive to noise.")
     parser.add_argument("--fit_range_right", nargs='+', type=_int_or_auto,
-                       default=_config_default(config, 'fit_range_right', 500),
+                       default=_config_default(config, 'fit_range_right', 'auto'),
                         help="Right charge bound (in electrons) for the parabolic nonlinearity fit. Accepts: a single int applied to all extensions (e.g. 500), one int per extension (e.g. 600 850 750 1050), or the literal 'auto' to enable the data-driven estimator that picks the value minimizing var(a) of the parabola fit per extension.")
     parser.add_argument("--auto_fit_range_tolerance", type=float,
                        default=_config_default(config, 'auto_fit_range_tolerance', None),
@@ -909,7 +931,7 @@ You can enable any combination of steps using flags below.""",
                         metavar=('W', 'H'),
                         help="Figure size (width height) for individual zero/one peak plots")
     parser.add_argument("--plot_zero_one_subplots_figsize", nargs=2, type=float,
-                        default=_config_default(config, 'plot_zero_one_subplots_figsize', [10, 8]),
+                        default=_config_default(config, 'plot_zero_one_subplots_figsize', [13, 9]),
                         metavar=('W', 'H'),
                         help="Figure size (width height) for combined 2x2 zero/one peak subplot")
     parser.add_argument("--plot_all_peaks_xlim", nargs='+', type=_lim_token,
@@ -928,7 +950,7 @@ You can enable any combination of steps using flags below.""",
                         metavar=('W', 'H'),
                         help="Figure size (width height) for individual all-peaks plots")
     parser.add_argument("--plot_all_peaks_subplots_figsize", nargs=2, type=float,
-                        default=_config_default(config, 'plot_all_peaks_subplots_figsize', [9, 7]),
+                        default=_config_default(config, 'plot_all_peaks_subplots_figsize', [13, 9]),
                         metavar=('W', 'H'),
                         help="Figure size (width height) for combined 2x2 all-peaks subplot")
     parser.add_argument("--plot_nonlinearity_individual_figsize", nargs=2, type=float,
@@ -936,7 +958,7 @@ You can enable any combination of steps using flags below.""",
                         metavar=('W', 'H'),
                         help="Figure size (width height) for individual nonlinearity plots")
     parser.add_argument("--plot_nonlinearity_subplots_figsize", nargs=2, type=float,
-                        default=_config_default(config, 'plot_nonlinearity_subplots_figsize', [9, 7]),
+                        default=_config_default(config, 'plot_nonlinearity_subplots_figsize', [13, 9]),
                         metavar=('W', 'H'),
                         help="Figure size (width height) for combined 2x2 nonlinearity subplot")
     parser.add_argument("--plot_nonlinearity_xlim", nargs='+', type=_lim_token,
@@ -963,7 +985,7 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("--no-plot_all_peaks_individual", dest="plot_all_peaks_individual", action="store_false",
                         help="Disable individual all-peaks plots when enabled by JSON config")
     parser.add_argument("--plot_all_peaks_together", action="store_true",
-                        default=_config_default(config, 'plot_all_peaks_together', True),
+                        default=_config_default(config, 'plot_all_peaks_together', False),
                         help="Plot all-peaks as a combined 2x2 subplot")
     parser.add_argument("--no-plot_all_peaks_together", dest="plot_all_peaks_together", action="store_false",
                         help="Disable combined all-peaks subplot")
@@ -973,12 +995,12 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("--no-plot_nonlinearity_individual", dest="plot_nonlinearity_individual", action="store_false",
                         help="Disable individual nonlinearity plots when enabled by JSON config")
     parser.add_argument("--plot_nonlinearity_together", action="store_true",
-                        default=_config_default(config, 'plot_nonlinearity_together', True),
+                        default=_config_default(config, 'plot_nonlinearity_together', False),
                         help="Plot nonlinearity as a combined 2x2 subplot")
     parser.add_argument("--no-plot_nonlinearity_together", dest="plot_nonlinearity_together", action="store_false",
                         help="Disable combined nonlinearity subplot")
     parser.add_argument("--plot_zero_one_electrons", action="store_true",
-                        default=_config_default(config, 'plot_zero_one_electrons', True),
+                        default=_config_default(config, 'plot_zero_one_electrons', False),
                         help="Also produce zero/one peak plots converted to electrons (in addition to ADU)")
     parser.add_argument("--no-plot_zero_one_electrons", dest="plot_zero_one_electrons", action="store_false",
                         help="Disable the electron-units zero/one peak plots")

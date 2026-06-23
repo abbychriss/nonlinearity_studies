@@ -52,7 +52,7 @@ pip install .
 
 - Python >= 3.8
 - numpy >= 1.26.0
-- matplotlib >= 3.8.0
+- 3.11 > matplotlib >= 3.8.0
 - scipy >= 1.11.0
 - astropy >= 5.3
 - tqdm
@@ -133,7 +133,7 @@ For the first example, we will fit the zero and one electron peaks for a single 
 
 ```bash
 run-nonlinearity-studies \
-    "examples/images/ten-images/avg_img_CV_250x3500x500_bin1x1_125_20260317_213403_0.fz" \
+    "examples/images/VR-3/avg_img_CV_250x3500x500_bin1x1_125_20260317_213403_0.fz" \
     --plot_zero_one_adu --plot_zero_one_together
 ```
 
@@ -141,7 +141,7 @@ Next, let's stitch 10 images together from `examples/images/VR-3` and run the an
 
 ```bash
 run-nonlinearity-studies \
-    "examples/images/VR-3/*" \
+    "examples/images/VR-3/avg*.fz" \
     --stitch_fits \
     --plot_zero_one_adu --plot_zero_one_together \
     --plot_nonlinearity_together
@@ -165,27 +165,22 @@ run-nonlinearity-studies \
     --get_nonlinearity_at 10 50 500 1000
 ```
 
-To let the pipeline choose the parabola fit range per extension, pass `--fit_range_right auto`. This uses the `changepoint` estimator and cross-checks each result against `var(a)` to assign a per-extension confidence label:
+Note that the parabola fit range per extension is chosen automatically using the `changepoint` method, which cross-checks each result against `var(a)` to assign a per-extension confidence label. You can force a different choice for fit range right per extension by:
 
 ```bash
 run-nonlinearity-studies \
     "examples/images/VR-3/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
-    --fit_range_right auto --plot_nonlinearity_together --save_plots
+    --fit_range_right 600 1000 800 1000  --plot_nonlinearity_together --save_plots
 ```
 
-With `--save_plots`, the full per-extension estimate (chosen value, cross-check, confidence) is written to `fit_range_estimate.json` in the run's output folder. Add `--verbose` to also print the confidence label per extension and a warning for any that need review:
-
-```
-EXT 3: changepoint fit_range_right = 693 e-  (var(a) cross-check = 100 e-, rel diff = 86%, confidence = LOW)  <-- REVIEW
-  WARNING: low-confidence fit_range_right on EXT [3] (changepoint and var(a) disagree by > 15%); inspect the nonlinearity plot(s).
-```
+With `--save_plots`, the full per-extension estimate (chosen value, cross-check, confidence) is written to `fit_range_estimate.json` in the run's output folder. Add `--verbose` to also print the confidence label per extension and a warning for any that need review.
 
 To quantify single-electron resolution at one or more charges, pass `--resolution_at`. This prints (and, with `--save_csv`, saves) a per-charge/per-extension table of σ, reduced χ², ΔAIC, peak counts, and verdict, and with a plot flag draws the charge distribution in the window with Gaussian fits:
 
 ```bash
 run-nonlinearity-studies \
     "examples/images/VR-3/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
-    --resolution_at 200 600 1000 --resolution_window 10 \
+    --resolution_at 250 500 1000 --resolution_window 10 \
     --plot_resolution_together --save_plots --save_csv
 ```
 

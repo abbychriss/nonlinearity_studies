@@ -60,7 +60,7 @@ def find_all_peaks(data,
                    do_convert_to_electrons=True,
                    range_left='left_of_zero',
                    range_right=2500,
-                   bin_factor=8,
+                   bin_factor=10,
                    prominence=None):
 
     if flatten:
@@ -780,12 +780,13 @@ def summarize_resolution(results_ext, save_path=None):
 def plot_all_peaks(counts_ext, 
                    peaks_ext, 
                    centers_ext, 
-                   xlim, ylim='none', 
-                   yscale='log', 
-                   plot_individual=True, plot_together=False,
+                   xlim=(500,510),
+                   ylim=(0,100),
+                   yscale='linear', 
+                   plot_individual=False, plot_together=False,
                    draw_lines=True, linecolor='r', linestyle='--',
                    peak_number_labels_individual=True, peak_number_labels_together=True, peak_number_label_size=8,
-                   individual_figsize=(6,5), subplots_figsize=(9,7),
+                   individual_figsize=(7,6), subplots_figsize=(13,9),
                    additional_title='',
                    suptitle='Peaks in Pixel Charge Distribution',
                    nimages=10,
@@ -937,7 +938,7 @@ def plot_nonlinearity(peaks_ext,
                       charge_minus_npeak_ext,
                       fit_range_right_ext,
                       xlim='default', ylim='default',
-                      individual_figsize=(6,5), subplots_figsize=(9,7),
+                      individual_figsize=(6,5), subplots_figsize=(13,9),
                       additional_title='',
                       suptitle='Pixel Charge Nonlinearity',
                       nimages=10,
@@ -946,7 +947,7 @@ def plot_nonlinearity(peaks_ext,
                       s=2, 
                       alpha=0.5,
                       plot_individual=False,
-                      plot_together=True,
+                      plot_together=False,
                       sharex=True,
                       sharey=True,
                       show_titles=True,
@@ -1203,7 +1204,7 @@ def plot_resolution(results_ext, charges,
 
         
 
-def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, bins='default', flatten=True, do_convert_to_electrons=True, range_left='default', range_right=2000, bin_factor=8, prominences=None, print_values=False):
+def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, bins='default', flatten=True, do_convert_to_electrons=True, range_left='default', range_right=2000, bin_factor=10, prominences=None, print_values=False):
     counts_ext = []
     edges_ext = []
     peaks_ext = []

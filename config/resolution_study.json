@@ -1,5 +1,5 @@
 {
-    "file_string": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-22.5/acm125_tc2/stitched-fits/cts_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched.fits",
+    "file_string": "",
     "stitch_fits": false,
     "resolution_at": [500, 1000, 1200],
     "resolution_window": 10,
@@ -23,7 +23,7 @@
     "save_csv": true,
     "output_dir": null,
     "verbose": true,
-    "extra_plot_title": "VR = -3, VDD = -22.5: ",
+    "extra_plot_title": null,
     "peak_finder_widths": [0.1, 0.1, 0.1, 0.1],
     "peak_finder_buffers": [3, 3, 3, 3],
     "peak_finder_prominences": [null, null, null, null],
@@ -32,7 +32,7 @@
     "do_pedestal_subtraction": true,
     "n_std_to_mask": 1.5,
     "pedsub_max_iter": 5,
-    "pedestal_subtraction_axis": "row_then_col",
+    "pedestal_subtraction_axis": "row",
     "use_biweight_loc": true,
     "use_biweight_midvar": true,
     "show_titles": true
