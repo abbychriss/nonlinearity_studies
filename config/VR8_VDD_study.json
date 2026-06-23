@@ -5,7 +5,7 @@
     "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_study",
     "series_label": "VR (V)",
     "series_same_plot": true,
-    "series_styles": {
+    "series_line_styles": {
         "Standard": "-",
         "Increased": "--"
     },

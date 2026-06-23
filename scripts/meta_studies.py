@@ -69,7 +69,8 @@ CONFIG_KEYS = {
     "series_label",
     "series_column",
     "series_same_plot",
-    "series_styles",
+    "series_line_styles",
+    "series_markers",
     "uniform_series_style",
     "colors",
     "dpi",
@@ -114,7 +115,8 @@ def load_config(config_path):
     config.setdefault("series_label", None)
     config.setdefault("series_column", None)
     config.setdefault("series_same_plot", True)
-    config.setdefault("series_styles", None)
+    config.setdefault("series_line_styles", None)
+    config.setdefault("series_markers", None)
     config.setdefault("uniform_series_style", False)
     config.setdefault("colors", None)
     config.setdefault("dpi", 350)
@@ -226,7 +228,7 @@ def _color_for(ext, extensions, colors):
     return palette[extensions.index(ext) % len(palette)]
 
 
-def _style_for(series, series_list, series_styles, uniform=False):
+def _style_for(series, series_list, series_line_styles, uniform=False):
     """Resolve a series' linestyle from a dict mapping or a cycled default.
 
     With ``uniform`` set, every series gets the default solid line; this is for
@@ -235,22 +237,27 @@ def _style_for(series, series_list, series_styles, uniform=False):
     """
     if series is None or uniform:
         return "-"
-    if isinstance(series_styles, dict) and series in series_styles:
-        return series_styles[series]
+    if isinstance(series_line_styles, dict) and series in series_line_styles:
+        return series_line_styles[series]
     cycle_styles = dict(zip(series_list, cycle(DEFAULT_LINESTYLES)))
     return cycle_styles[series]
 
 
-def _marker_for(series, series_list, single_x, uniform=False):
-    """Resolve a series' marker.
+def _marker_for(series, series_list, single_x, series_markers=None, uniform=False):
+    """Resolve a series' marker from a dict mapping or a default.
 
-    Markers only differ between series when there is a single x value: each line
-    is then a lone point and the linestyle is invisible, so the marker is the
-    only thing distinguishing one series from another. Otherwise every line uses
-    the default round marker and series are told apart by linestyle. With
-    ``uniform`` set, every series gets the default marker regardless.
+    An explicit ``series_markers`` mapping always wins: a series named there gets
+    its configured marker on every figure. Otherwise markers only differ between
+    series when there is a single x value (each line is then a lone point and the
+    linestyle is invisible, so the marker is the only distinguisher); with several
+    x values every line uses the default round marker and series are told apart by
+    linestyle. With ``uniform`` set, every series gets the default marker.
     """
-    if uniform or not single_x or series is None:
+    if uniform or series is None:
+        return "o"
+    if isinstance(series_markers, dict) and series in series_markers:
+        return series_markers[series]
+    if not single_x:
         return "o"
     cycle_markers = dict(zip(series_list, cycle(DEFAULT_MARKERS)))
     return cycle_markers[series]
@@ -357,8 +364,9 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
                 sub = ext_rows[ext_rows["series"] == series].sort_values("x")
                 if sub.empty:
                     continue
-                style = _style_for(series, series_list, config["series_styles"])
-                marker = _marker_for(series, series_list, single_x)
+                style = _style_for(series, series_list, config["series_line_styles"])
+                marker = _marker_for(series, series_list, single_x,
+                                     config["series_markers"])
                 tag = _series_tag(config["series_label"] or "series", series)
                 _draw_line(ax, sub, column, color, style, f"EXT{ext} ({tag})",
                            fit_line, fit_lookup.get((ext, series)), marker=marker)
@@ -369,8 +377,10 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
             series = group_series if group_series is not None else (
                 series_list[0] if has_series else None)
             uniform = config["uniform_series_style"]
-            style = _style_for(series, series_list, config["series_styles"], uniform=uniform)
-            marker = _marker_for(series, series_list, single_x, uniform=uniform)
+            style = _style_for(series, series_list, config["series_line_styles"],
+                               uniform=uniform)
+            marker = _marker_for(series, series_list, single_x,
+                                 config["series_markers"], uniform=uniform)
             _draw_line(ax, sub, column, color, style, f"EXT{ext}",
                        fit_line, fit_lookup.get((ext, series)), marker=marker)
 

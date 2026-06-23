@@ -137,11 +137,11 @@ run-nonlinearity-studies \
     --plot_zero_one_adu --plot_zero_one_together
 ```
 
-Next, let's stitch 10 images together from `examples/images/ten-images/` and run the analysis script on the stitched output:
+Next, let's stitch 10 images together from `examples/images/VR-3` and run the analysis script on the stitched output:
 
 ```bash
 run-nonlinearity-studies \
-    "examples/images/ten-images/*" \
+    "examples/images/VR-3/*" \
     --stitch_fits \
     --plot_zero_one_adu --plot_zero_one_together \
     --plot_nonlinearity_together
@@ -151,7 +151,7 @@ Now every time we want to analyze the stitched image again, we can pass the stit
 
 ```bash
 run-nonlinearity-studies \
-    "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
+    "examples/images/VR-3/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
     --plot_zero_one_adu --plot_zero_one_electrons --plot_zero_one_together \
     --plot_nonlinearity_together \
     --save_plots
@@ -161,26 +161,15 @@ If we want only the nonlinearity at specific charge values:
 
 ```bash
 run-nonlinearity-studies \
-    "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
+    "examples/images/VR-3/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
     --get_nonlinearity_at 10 50 500 1000
 ```
-
-To quantify single-electron resolution at one or more charges, pass `--resolution_at`. This prints (and, with `--save_csv`, saves) a per-charge/per-extension table of σ, reduced χ², ΔAIC, peak counts, and verdict, and with a plot flag draws the windowed comb fits:
-
-```bash
-run-nonlinearity-studies \
-    "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
-    --resolution_at 200 600 1000 --resolution_window 10 \
-    --plot_resolution_together --save_plots --save_csv
-```
-
-A ready-made config is provided at `config/resolution_study.json`.
 
 To let the pipeline choose the parabola fit range per extension, pass `--fit_range_right auto`. This uses the `changepoint` estimator and cross-checks each result against `var(a)` to assign a per-extension confidence label:
 
 ```bash
 run-nonlinearity-studies \
-    "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
+    "examples/images/VR-3/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
     --fit_range_right auto --plot_nonlinearity_together --save_plots
 ```
 
@@ -191,9 +180,52 @@ EXT 3: changepoint fit_range_right = 693 e-  (var(a) cross-check = 100 e-, rel d
   WARNING: low-confidence fit_range_right on EXT [3] (changepoint and var(a) disagree by > 15%); inspect the nonlinearity plot(s).
 ```
 
-### Json config
+To quantify single-electron resolution at one or more charges, pass `--resolution_at`. This prints (and, with `--save_csv`, saves) a per-charge/per-extension table of σ, reduced χ², ΔAIC, peak counts, and verdict, and with a plot flag draws the charge distribution in the window with Gaussian fits:
 
-The same options can be written in JSON using argparse destination names. A config might look like:
+```bash
+run-nonlinearity-studies \
+    "examples/images/VR-3/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
+    --resolution_at 200 600 1000 --resolution_window 10 \
+    --plot_resolution_together --save_plots --save_csv
+```
+
+Or can use the json config in `config/resolution_study.json`:
+
+```bash
+run-nonlinearity-studies \
+    "examples/images/VR-3/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
+    -j "config/resolution_study.json"
+```
+
+Now say you are studying the effect of a variable such as deltaV on nonlinearity. Then the script `meta_studies.py` in the `scripts` directory can compare the results of those studies. First run the nonlinearity studies to get an `extension_summary.csv` table for each deltaV, either by changing the image parameter and titles in `default_nonlinearity.json` appropriately and running
+
+```bash
+run-nonlinearity-studies -j config/default_nonlinearity.json
+```
+
+or changing them on the command line
+
+```bash
+run-nonlinearity-studies "examples/images/VR-6_standard_deltaV/*" --stitch_fits -j "config/default_nonlinearity.json" --extra_plot_title "VR = -6, standard deltaV"
+```
+```bash
+run-nonlinearity-studies "examples/images/VR-6_increased_deltaV/*" --stitch_fits -j "config/default_nonlinearity.json" --extra_plot_title "VR = -6, increased deltaV"
+```
+
+Then you can plot the noise/gain/nonlinearity versus deltaV per extension using `config/VR6_deltaV_vs_ext_study.json` by running
+
+```bash
+python scripts/meta_studies.py -j "config/VR6_deltaV_study.json"
+```
+or compare these values versus extension `config/VR6_deltaV_vs_ext_study.json` 
+
+```bash
+python scripts/meta_studies.py -j "config/VR6_deltaV_vs_ext_study.json"
+```
+
+### JSON config
+
+It's easier to control all options using a JSON file instead of changing parameters on the command line. Check out the `/config` directory for examples of JSON files for different uses (make sure to change any hard-coded file names that aren't in `\examples`). A config for `run-nonlinearity-studies` looks like:
 
 ```json
 {

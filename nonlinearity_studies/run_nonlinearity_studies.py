@@ -310,9 +310,9 @@ def main(args=None):
         args = init_argparse()
 
     # If a non-empty extra_plot_title doesn't already end with a separator,
-    # append ": " so it reads cleanly before the default title.
+    # append a newline so it sits on its own line above the default title.
     if args.extra_plot_title and not args.extra_plot_title.endswith((' ', '\n')):
-        args.extra_plot_title = f'{args.extra_plot_title}: '
+        args.extra_plot_title = f'{args.extra_plot_title}\n'
 
     file_path = Path(args.file_string)
 
