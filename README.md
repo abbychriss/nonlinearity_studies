@@ -39,7 +39,6 @@ conda activate nonlinearity-studies
 Install package in development mode (the -e flag makes files editable):
 
 ```bash
-cd nonlinearity_studies
 pip install -e .
 ```
 
@@ -127,86 +126,6 @@ plot_nonlinearity(
 )
 ```
 
-#### Options
-
-##### Pipeline / I/O
-- `-j`, `--json PATH`: Load command-line arguments from a JSON config file (CLI arguments override JSON values)
-- `-f`, `--stitch_fits`: Stitch multi-extension FITS files before analysis
-- `-s`, `--save_plots`: Save generated plots as JPEGs
-- `--save_csv`: Save the per-extension summary table as `extension_summary.csv` in the output directory (independent of `--save_plots`)
-- `-o`, `--output_dir DIR`: Directory for all saved output (plots, summary CSV, config snapshot). Defaults to a `plots/` folder alongside the source FITS.
-- `--show_plots` / `--no-show_plots`: Display plots interactively via `plt.show()` (default `true`). When disabled, figures are simply not shown (and are closed to free memory) instead of switching matplotlib to a non-interactive backend — useful for headless/batch runs, and still works alongside `--save_plots`.
-- `-v`, `--verbose`: Print verbose output
-- `--nimages N`: Number of stitched images (used for plot labeling). Auto-detected from filenames matching `_N_stitched`
-- `--extra_plot_title TITLE`: Additional title text prepended to every plot title
-
-##### What to plot
-Each plot type is controlled by its `_individual` and `_together` toggles (see [Plot layout](#plot-layout-per-plot-type)) — a plot is generated whenever either is `true`.
-- `-z`, `--plot_zero_one_adu`: Render the zero/one electron peak fits in ADU (units selector for the zero/one plot)
-- `--plot_zero_one_electrons`: Render the zero/one electron peak fits in e- (independent of the ADU flag)
-- `-g`, `--get_nonlinearity_at CHARGE...`: Evaluate the nonlinearity polynomial at one or more charge values
-- `-r`, `--resolution_at CHARGE...`: Quantify single-electron resolution at one or more charge values (see [Single-electron resolution](#single-electron-resolution))
-
-##### Per-extension summary table
-Every run prints a per-extension summary table to stdout (no flag required) with the **gain** in ADU/e- (the separation between the zero- and one-electron peaks from the double-Gaussian fit), the **noise** in e- (the standard deviation of the zero-electron peak, converted from ADU to electrons by dividing by the gain), and one **nonlinearity** column per charge passed to `--get_nonlinearity_at` (falling back to 500 e- when none is given). With `--save_csv`, the same table is written as a CSV (`extension_summary.csv`) in the output directory — one row per extension with a header row, ready to load with `numpy.genfromtxt(..., delimiter=',', names=True)` or `numpy.loadtxt(..., delimiter=',', skiprows=1)`.
-
-##### Pedestal subtraction
-- `--do_pedestal_subtraction` / `--no-do_pedestal_subtraction`: Toggle pedestal subtraction (default `true`)
-- `--n_std_to_mask FLOAT`: Mask threshold (in standard deviations) for the pedestal estimator
-- `--pedsub_max_iter INT`: Max sigma-clip iterations for pedestal subtraction (default `5`). Each pass re-estimates the pedestal from the clipped zero-peak core and stops early once it converges.
-- `--pedestal_subtraction_axis {row, col, row_then_col, col_then_row}`: Axis to compute the pedestal across
-- `--use_biweight_loc` / `--use_biweight_midvar`: Use Tukey biweight location/midvariance instead of mean/std
-- `--pedsub_cache_dir DIR`: Directory for the pedestal-subtracted FITS cache (default: alongside the source FITS)
-- `--force_pedsub`: Recompute pedestal subtraction even if a matching cache exists
-
-##### Fitting
-- `--peak_finder_widths W [W ...]`: Minimum peak width required by `scipy.signal.find_peaks`, in **electrons** (internally multiplied by `bin_factor` to convert to bins). Scalar or one per extension. Larger = filters narrow noise spikes more aggressively.
-- `--peak_finder_buffers B [B ...]`: Buffer (in **bins**) SUBTRACTED from `bin_factor` to compute the minimum neighbor-peak distance: `d = bin_factor - buffer`. With the default `bin_factor=10`: `buffer=0` → 10 bins = 1 electron spacing (physical), `buffer=3` → 7 bins ≈ 0.7 electron (loose), `buffer=-2` → 12 bins = 1.2 electron (strict). Larger buffer = looser; smaller/negative = stricter.
-- `--peak_finder_prominences P [P ...]`: Minimum peak prominence in **histogram counts** (same units as the y-axis of `plot_all_peaks`). Scalar, one per extension, or `null` to disable. Often the most robust filter — measures how far a peak sticks up above its surrounding baseline, regardless of width.
-- `--bin_factor N`: Number of histogram bins per electron in the all-peaks histogram (default `10`). Also drives the `peak_finder_widths` electron-to-bin conversion (`width_in_bins = width_in_electrons * bin_factor`) and the buffer math (`distance_in_bins = bin_factor - buffer`). Higher = finer histogram, but small-width/large-buffer values become more permissive.
-- `--fit_range_right CHARGE [CHARGE ...] | auto`: Right charge bound (in electrons) for the parabolic nonlinearity fit. Accepts a single int applied to all extensions, one int per extension (e.g. `600 850 750 1050`), or the literal `auto` to pick it per extension with a data-driven estimator (see `--auto_fit_range_method`).
-- `--auto_fit_range_method {changepoint, var_a, noise_onset}`: Estimator used when `--fit_range_right auto` (default `changepoint`). The nonlinearity curve is a clean parabola up to some charge, then becomes noisy; the goal is to fit only the clean part.
-  - `changepoint` (**default, recommended**): a two-stage, drift-free changepoint detector. It computes *local* roughness (the robust residual scatter of a local quadratic fit in a sliding window), which stays flat through the whole clean parabola regardless of its curvature and steps up sharply at the noise onset; it then refines the exact cut on the points that are guaranteed clean. Immune to the two `var_a` failure modes below.
-  - `var_a`: picks the value minimizing `var(a)` (the variance of the parabola's curvature coefficient, `pcov[0,0]`). Works well when the score curve has a clear minimum, but can fail when the curve is near-linear (score decreases monotonically into the noisy tail) or flat (score collapses to the smallest range).
-  - `noise_onset` (experimental): walks the curve forward and returns the first charge where a rolling median-absolute-deviation of residuals around a local quadratic exceeds `factor × baseline`, where the baseline is the median MAD in the early "safe" region (peaks within the bottom 30% of the above-`min_charge` range). Sensitivity is tuned via `--noise_onset_window` (sliding-window size in peaks; default `30`) and `--noise_onset_factor` (default `2.5`; lower = picks the onset earlier). Note: for globally noisy extensions the baseline MAD itself is elevated, so this estimator can floor well above the true visual onset — `changepoint` is usually preferable.
-- `--changepoint_window N`: (changepoint) window size in peaks for the local-roughness quadratic fit / MAD (default `25`; odd values recommended).
-- `--changepoint_factor FLOAT`: (changepoint) local roughness must exceed `factor × baseline` (or the absolute floor, whichever is larger) to mark the noise onset (default `4.0`; lower = more sensitive).
-- `--changepoint_floor FLOAT`: (changepoint) absolute roughness floor in **electrons** (default `0.15`). Keeps an ultra-quiet early region from setting an impossibly tight threshold that would trip on sub-noise waviness. Sits between clean scatter (~0.02–0.05) and noisy-region roughness (~0.3–0.5); the first knob to revisit if a dataset has very different peak-location noise.
-- `--changepoint_persist N`: (changepoint) number of consecutive points that must exceed the threshold to count as the noise onset (default `4`; higher = more robust to isolated outliers / precursor bumps).
-- `--fit_range_confidence_tol FLOAT`: (changepoint) relative tolerance for the `var(a)` cross-check (default `0.15` = 15%). After estimating each extension, the independent `var(a)` value is computed; extensions where the two disagree by more than this fraction are flagged `LOW` confidence — printed at runtime with a `<-- REVIEW` marker and recorded in `fit_range_estimate.json` in the run's output folder (when `--save_plots`).
-- `--auto_fit_range_tolerance FLOAT` / `--auto_fit_range_max_charge_percentile FLOAT` / `--auto_fit_range_min_peaks_in_fit INT`: (`var_a` method only) optional guards — accept the smallest candidate within `(1+tol)×min_score`, cap candidates at a charge percentile, and reject candidates enclosing too few peaks, respectively.
-- `--noise_onset_window N` / `--noise_onset_factor FLOAT`: (`noise_onset` method only) sliding-window size and the MAD-over-baseline factor for noise onset.
-
-##### Single-electron resolution
-The resolution step runs only when `--resolution_at` is given. For each requested charge *q* it takes a window `[q - n/2, q + n/2]` of the all-peaks histogram (n peaks wide), fits a constrained sum of Gaussians — a *comb* with means **fixed** at the already-detected peak locations, a single **shared** σ across all components, and free amplitudes — and scores how well that comb describes the window. The shared σ, in electrons, is the resolution figure of merit. Goodness of fit is reported as the comb's reduced χ² and as ΔAIC versus a single broad Gaussian "unresolved" null (positive favors the comb). Each window also gets a three-tier verdict (`well resolved` / `marginal` / `unresolved`). When the all-peaks histogram's right edge would fall short of the largest requested window, it is automatically extended to cover it.
-
-- `-r`, `--resolution_at CHARGE [CHARGE ...]`: Charge value(s) in electrons to evaluate. Omitted (default `null`) → the resolution step is skipped entirely.
-- `--resolution_window FLOAT`: Window width *n* in electrons (≈ number of peaks per window). Default `10`.
-- `--resolution_sigma_well FLOAT`: σ (e-) below which peaks are **well resolved** (separation > 4σ). Default `0.25`.
-- `--resolution_sigma_limit FLOAT`: σ (e-) at/above which peaks are **unresolved** (no central valley, separation < 2σ). Default `0.5`. Between `sigma_well` and `sigma_limit` the verdict is `marginal`.
-- `--resolution_min_peak_frac FLOAT`: Detected/expected peak fraction below which the window is **unresolved** regardless of σ. Default `0.6`. This catches windows where the peak finder recovered far fewer than the ~`window+1` peaks the window should hold (e.g. 2 of 11) — too smeared to detect, so the under-determined σ is meaningless.
-
-The verdict, σ, reduced χ², ΔAIC, and detected/expected peak counts are printed in a per-charge/per-extension table. With `--save_csv` the same table is written to `resolution_summary.csv` in the run's output folder.
-
-##### Plot layout (per plot type)
-For each of `plot_zero_one`, `plot_all_peaks`, `plot_nonlinearity`, `plot_resolution`:
-- `--<plot>_individual` / `--no-<plot>_individual`: Render one figure per extension
-- `--<plot>_together` / `--no-<plot>_together`: Render a single 2×2 subplot grid for all extensions
-- `--<plot>_individual_figsize W H`: Figure size for individual mode
-- `--<plot>_subplots_figsize W H`: Figure size for the 2×2 together mode
-- `--<plot>_sharex` / `--no-<plot>_sharex`: Share x-axis range across the 2×2 grid
-- `--<plot>_sharey` / `--no-<plot>_sharey`: Share y-axis range across the 2×2 grid
-
-Top-row x-axis labels and right-column y-axis labels are always hidden in the 2×2 grids (tick labels are kept regardless of `sharex`/`sharey`).
-
-For `plot_resolution` the two modes differ slightly because there can be several charges: `individual` renders one figure per (extension, charge), while `together` renders one 2×2 grid (one extension per panel) **per charge**. Its `_individual`/`_together` toggles default to `false`/`true`, and `--plot_resolution_subplots_figsize` defaults to `[13, 9]` (wider than the other plots to fit the wide windows). Resolution plots are only produced when `--resolution_at` is also set.
-
-##### Plot styling
-- `--plot_zero_one_yscale {linear, log}`
-- `--plot_all_peaks_xlim LEFT RIGHT` / `--plot_all_peaks_ylim BOTTOM TOP`
-- `--plot_all_peaks_yscale {linear, log}`
-- `--plot_nonlinearity_xlim ...` / `--plot_nonlinearity_ylim ...`: 2 values for a shared limit across extensions, or 8 values (`L1 R1 L2 R2 L3 R3 L4 R4`) for per-extension limits
-- `--show_titles` / `--no-show_titles`: Toggle all `fig.suptitle` and `ax.set_title` calls across every plot
 
 ## Examples
 
@@ -271,6 +190,8 @@ With `--save_plots`, the full per-extension estimate (chosen value, cross-check,
 EXT 3: changepoint fit_range_right = 693 e-  (var(a) cross-check = 100 e-, rel diff = 86%, confidence = LOW)  <-- REVIEW
   WARNING: low-confidence fit_range_right on EXT [3] (changepoint and var(a) disagree by > 15%); inspect the nonlinearity plot(s).
 ```
+
+### Json config
 
 The same options can be written in JSON using argparse destination names. A config might look like:
 
@@ -357,6 +278,87 @@ Explicit command-line arguments override JSON values, so this also works:
 ```bash
 run-nonlinearity-studies -j config/default_nonlinearity.json --no-save_plots
 ```
+
+## Options
+
+##### Pipeline / I/O
+- `-j`, `--json PATH`: Load command-line arguments from a JSON config file (CLI arguments override JSON values)
+- `-f`, `--stitch_fits`: Stitch multi-extension FITS files before analysis
+- `-s`, `--save_plots`: Save generated plots as JPEGs
+- `--save_csv`: Save the per-extension summary table as `extension_summary.csv` in the output directory (independent of `--save_plots`)
+- `-o`, `--output_dir DIR`: Directory for all saved output (plots, summary CSV, config snapshot). Defaults to a `plots/` folder alongside the source FITS.
+- `--show_plots` / `--no-show_plots`: Display plots interactively via `plt.show()` (default `true`). When disabled, figures are simply not shown (and are closed to free memory) instead of switching matplotlib to a non-interactive backend — useful for headless/batch runs, and still works alongside `--save_plots`.
+- `-v`, `--verbose`: Print verbose output
+- `--nimages N`: Number of stitched images (used for plot labeling). Auto-detected from filenames matching `_N_stitched`
+- `--extra_plot_title TITLE`: Additional title text prepended to every plot title
+
+##### Plotting
+Each plot type is controlled by its `_individual` and `_together` toggles (see [Plot layout](#plot-layout-per-plot-type)) — a plot is generated whenever either is `true`.
+- `-z`, `--plot_zero_one_adu`: Render the zero/one electron peak fits in ADU (units selector for the zero/one plot)
+- `--plot_zero_one_electrons`: Render the zero/one electron peak fits in e- (independent of the ADU flag)
+- `-g`, `--get_nonlinearity_at CHARGE...`: Evaluate the nonlinearity polynomial at one or more charge values
+- `-r`, `--resolution_at CHARGE...`: Quantify single-electron resolution at one or more charge values (see [Single-electron resolution](#single-electron-resolution))
+
+##### Per-extension summary table
+Every run prints a per-extension summary table to stdout (no flag required) with the **gain** in ADU/e- (the separation between the zero- and one-electron peaks from the double-Gaussian fit), the **noise** in e- (the standard deviation of the zero-electron peak, converted from ADU to electrons by dividing by the gain), and one **nonlinearity** column per charge passed to `--get_nonlinearity_at` (falling back to 500 e- when none is given). With `--save_csv`, the same table is written as a CSV (`extension_summary.csv`) in the output directory — one row per extension with a header row, ready to load with `numpy.genfromtxt(..., delimiter=',', names=True)` or `numpy.loadtxt(..., delimiter=',', skiprows=1)`.
+
+##### Pedestal subtraction
+- `--do_pedestal_subtraction` / `--no-do_pedestal_subtraction`: Toggle pedestal subtraction (default `true`)
+- `--n_std_to_mask FLOAT`: Mask threshold (in standard deviations) for the pedestal estimator
+- `--pedsub_max_iter INT`: Max sigma-clip iterations for pedestal subtraction (default `5`). Each pass re-estimates the pedestal from the clipped zero-peak core and stops early once it converges.
+- `--pedestal_subtraction_axis {row, col, row_then_col, col_then_row}`: Axis to compute the pedestal across
+- `--use_biweight_loc` / `--use_biweight_midvar`: Use Tukey biweight location/midvariance instead of mean/std
+- `--pedsub_cache_dir DIR`: Directory for the pedestal-subtracted FITS cache (default: alongside the source FITS)
+- `--force_pedsub`: Recompute pedestal subtraction even if a matching cache exists
+
+##### Fitting
+- `--peak_finder_widths W [W ...]`: Minimum peak width required by `scipy.signal.find_peaks`, in **electrons** (internally multiplied by `bin_factor` to convert to bins). Scalar or one per extension. Larger = filters narrow noise spikes more aggressively.
+- `--peak_finder_buffers B [B ...]`: Buffer (in **bins**) SUBTRACTED from `bin_factor` to compute the minimum neighbor-peak distance: `d = bin_factor - buffer`. With the default `bin_factor=10`: `buffer=0` → 10 bins = 1 electron spacing (physical), `buffer=3` → 7 bins ≈ 0.7 electron (loose), `buffer=-2` → 12 bins = 1.2 electron (strict). Larger buffer = looser; smaller/negative = stricter.
+- `--peak_finder_prominences P [P ...]`: Minimum peak prominence in **histogram counts** (same units as the y-axis of `plot_all_peaks`). Scalar, one per extension, or `null` to disable. Often the most robust filter — measures how far a peak sticks up above its surrounding baseline, regardless of width.
+- `--bin_factor N`: Number of histogram bins per electron in the all-peaks histogram (default `10`). Also drives the `peak_finder_widths` electron-to-bin conversion (`width_in_bins = width_in_electrons * bin_factor`) and the buffer math (`distance_in_bins = bin_factor - buffer`). Higher = finer histogram, but small-width/large-buffer values become more permissive.
+- `--fit_range_right CHARGE [CHARGE ...] | auto`: Right charge bound (in electrons) for the parabolic nonlinearity fit. Accepts a single int applied to all extensions, one int per extension (e.g. `600 850 750 1050`), or the literal `auto` to pick it per extension with a data-driven estimator (see `--auto_fit_range_method`).
+- `--auto_fit_range_method {changepoint, var_a, noise_onset}`: Estimator used when `--fit_range_right auto` (default `changepoint`). The nonlinearity curve is a clean parabola up to some charge, then becomes noisy; the goal is to fit only the clean part.
+  - `changepoint` (**default, recommended**): a two-stage, drift-free changepoint detector. It computes *local* roughness (the robust residual scatter of a local quadratic fit in a sliding window), which stays flat through the whole clean parabola regardless of its curvature and steps up sharply at the noise onset; it then refines the exact cut on the points that are guaranteed clean. Immune to the two `var_a` failure modes below.
+  - `var_a`: picks the value minimizing `var(a)` (the variance of the parabola's curvature coefficient, `pcov[0,0]`). Works well when the score curve has a clear minimum, but can fail when the curve is near-linear (score decreases monotonically into the noisy tail) or flat (score collapses to the smallest range).
+  - `noise_onset` (experimental): walks the curve forward and returns the first charge where a rolling median-absolute-deviation of residuals around a local quadratic exceeds `factor × baseline`, where the baseline is the median MAD in the early "safe" region (peaks within the bottom 30% of the above-`min_charge` range). Sensitivity is tuned via `--noise_onset_window` (sliding-window size in peaks; default `30`) and `--noise_onset_factor` (default `2.5`; lower = picks the onset earlier). Note: for globally noisy extensions the baseline MAD itself is elevated, so this estimator can floor well above the true visual onset — `changepoint` is usually preferable.
+- `--changepoint_window N`: (changepoint) window size in peaks for the local-roughness quadratic fit / MAD (default `25`; odd values recommended).
+- `--changepoint_factor FLOAT`: (changepoint) local roughness must exceed `factor × baseline` (or the absolute floor, whichever is larger) to mark the noise onset (default `4.0`; lower = more sensitive).
+- `--changepoint_floor FLOAT`: (changepoint) absolute roughness floor in **electrons** (default `0.15`). Keeps an ultra-quiet early region from setting an impossibly tight threshold that would trip on sub-noise waviness. Sits between clean scatter (~0.02–0.05) and noisy-region roughness (~0.3–0.5); the first knob to revisit if a dataset has very different peak-location noise.
+- `--changepoint_persist N`: (changepoint) number of consecutive points that must exceed the threshold to count as the noise onset (default `4`; higher = more robust to isolated outliers / precursor bumps).
+- `--fit_range_confidence_tol FLOAT`: (changepoint) relative tolerance for the `var(a)` cross-check (default `0.15` = 15%). After estimating each extension, the independent `var(a)` value is computed; extensions where the two disagree by more than this fraction are flagged `LOW` confidence — printed at runtime with a `<-- REVIEW` marker and recorded in `fit_range_estimate.json` in the run's output folder (when `--save_plots`).
+- `--auto_fit_range_tolerance FLOAT` / `--auto_fit_range_max_charge_percentile FLOAT` / `--auto_fit_range_min_peaks_in_fit INT`: (`var_a` method only) optional guards — accept the smallest candidate within `(1+tol)×min_score`, cap candidates at a charge percentile, and reject candidates enclosing too few peaks, respectively.
+- `--noise_onset_window N` / `--noise_onset_factor FLOAT`: (`noise_onset` method only) sliding-window size and the MAD-over-baseline factor for noise onset.
+
+##### Single-electron resolution
+The resolution step runs only when `--resolution_at` is given. For each requested charge *q* it takes a window `[q - n/2, q + n/2]` of the all-peaks histogram (n peaks wide), fits a constrained sum of Gaussians — a *comb* with means **fixed** at the already-detected peak locations, a single **shared** σ across all components, and free amplitudes — and scores how well that comb describes the window. The shared σ, in electrons, is the resolution figure of merit. Goodness of fit is reported as the comb's reduced χ² and as ΔAIC versus a single broad Gaussian "unresolved" null (positive favors the comb). Each window also gets a three-tier verdict (`well resolved` / `marginal` / `unresolved`). When the all-peaks histogram's right edge would fall short of the largest requested window, it is automatically extended to cover it.
+
+- `-r`, `--resolution_at CHARGE [CHARGE ...]`: Charge value(s) in electrons to evaluate. Omitted (default `null`) → the resolution step is skipped entirely.
+- `--resolution_window FLOAT`: Window width *n* in electrons (≈ number of peaks per window). Default `10`.
+- `--resolution_sigma_well FLOAT`: σ (e-) below which peaks are **well resolved** (separation > 4σ). Default `0.25`.
+- `--resolution_sigma_limit FLOAT`: σ (e-) at/above which peaks are **unresolved** (no central valley, separation < 2σ). Default `0.5`. Between `sigma_well` and `sigma_limit` the verdict is `marginal`.
+- `--resolution_min_peak_frac FLOAT`: Detected/expected peak fraction below which the window is **unresolved** regardless of σ. Default `0.6`. This catches windows where the peak finder recovered far fewer than the ~`window+1` peaks the window should hold (e.g. 2 of 11) — too smeared to detect, so the under-determined σ is meaningless.
+
+The verdict, σ, reduced χ², ΔAIC, and detected/expected peak counts are printed in a per-charge/per-extension table. With `--save_csv` the same table is written to `resolution_summary.csv` in the run's output folder.
+
+##### Plot layout (per plot type)
+For each of `plot_zero_one`, `plot_all_peaks`, `plot_nonlinearity`, `plot_resolution`:
+- `--<plot>_individual` / `--no-<plot>_individual`: Render one figure per extension
+- `--<plot>_together` / `--no-<plot>_together`: Render a single 2×2 subplot grid for all extensions
+- `--<plot>_individual_figsize W H`: Figure size for individual mode
+- `--<plot>_subplots_figsize W H`: Figure size for the 2×2 together mode
+- `--<plot>_sharex` / `--no-<plot>_sharex`: Share x-axis range across the 2×2 grid
+- `--<plot>_sharey` / `--no-<plot>_sharey`: Share y-axis range across the 2×2 grid
+
+Top-row x-axis labels and right-column y-axis labels are always hidden in the 2×2 grids (tick labels are kept regardless of `sharex`/`sharey`).
+
+For `plot_resolution` the two modes differ slightly because there can be several charges: `individual` renders one figure per (extension, charge), while `together` renders one 2×2 grid (one extension per panel) **per charge**. Its `_individual`/`_together` toggles default to `false`/`true`, and `--plot_resolution_subplots_figsize` defaults to `[13, 9]` (wider than the other plots to fit the wide windows). Resolution plots are only produced when `--resolution_at` is also set.
+
+##### Plot styling
+- `--plot_zero_one_yscale {linear, log}`
+- `--plot_all_peaks_xlim LEFT RIGHT` / `--plot_all_peaks_ylim BOTTOM TOP`
+- `--plot_all_peaks_yscale {linear, log}`
+- `--plot_nonlinearity_xlim ...` / `--plot_nonlinearity_ylim ...`: 2 values for a shared limit across extensions, or 8 values (`L1 R1 L2 R2 L3 R3 L4 R4`) for per-extension limits
+- `--show_titles` / `--no-show_titles`: Toggle all `fig.suptitle` and `ax.set_title` calls across every plot
 
 ### Pedestal-subtraction caching
 
