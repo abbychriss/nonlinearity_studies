@@ -31,5 +31,7 @@
         {"x": -7, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-7/plots/cds_avg_img_L2_250x3500x500_1x1_L2_124_12_stitched_0392c058/extension_summary.csv"},
         {"x": -8, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-8/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_836d8173/extension_summary.csv"},
         {"x": -9, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-9/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_30fff068/extension_summary.csv"}
-    ]
+    ],
+    "individual_figsize": [9,6.5],
+    "subplots_figsize": [13,10]
 }

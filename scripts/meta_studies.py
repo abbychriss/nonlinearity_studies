@@ -78,7 +78,7 @@ CONFIG_KEYS = {
     "show_plots",
     "fit_line",
     "save_report",
-    "figsize",
+    "individual_figsize",
     "plot_individual",
     "plot_together",
     "subplots_figsize",
@@ -124,10 +124,10 @@ def load_config(config_path):
     config.setdefault("show_plots", True)
     config.setdefault("fit_line", False)
     config.setdefault("save_report", True)
-    config.setdefault("figsize", [9, 6.5])
+    config.setdefault("individual_figsize", [9, 6.5])
     config.setdefault("plot_individual", True)
     config.setdefault("plot_together", False)
-    config.setdefault("subplots_figsize", None)
+    config.setdefault("subplots_figsize", [13, 10])
     config.setdefault("subplots_ncols", None)
 
     if config["x_axis"] not in ("value", "extension"):
@@ -292,6 +292,20 @@ def _save_figure(config, column, suffix=""):
     return out_path
 
 
+def _finish_figure(fig, config):
+    """Display one figure on its own (blocking) when showing, then close it.
+
+    Showing and closing a single figure at a time makes them pop up one by one and
+    keeps pyplot's registry holding only the current figure, so each plt.show()
+    raises just that window instead of re-raising every earlier one (which
+    interactive backends would otherwise duplicate). When not showing, the figure
+    is closed immediately to free memory.
+    """
+    if config["show_plots"]:
+        plt.show()
+    plt.close(fig)
+
+
 def _fit_enabled(spec, config):
     """Whether to fit a line for this quantity (per-quantity override of global)."""
     return spec.get("fit_line", config["fit_line"])
@@ -437,10 +451,11 @@ def plot_quantity(data, column, spec, config, fits):
         groups = [(None, data, "")]
 
     for group_series, subset, file_suffix in groups:
-        fig, ax = plt.subplots(figsize=config["figsize"])
+        fig, ax = plt.subplots(figsize=config["individual_figsize"])
         _render_quantity(ax, subset, column, spec, config, fits, series_list, group_series)
         fig.tight_layout()
         saved.append(_save_figure(config, column, file_suffix))
+        _finish_figure(fig, config)
 
     return saved
 
@@ -468,6 +483,7 @@ def plot_all_together(data, config, fits):
     fig.tight_layout()
     out_path = Path(config["output_dir"]) / f"{config['study_name']}_subplots.jpeg"
     fig.savefig(out_path, dpi=config["dpi"])
+    _finish_figure(fig, config)
     return out_path
 
 
@@ -554,7 +570,7 @@ def plot_quantity_vs_ext(data, column, spec, config):
     saved = []
     for x_value in sorted(data["x"].unique()):
         subset = data[data["x"] == x_value]
-        fig, ax = plt.subplots(figsize=config["figsize"])
+        fig, ax = plt.subplots(figsize=config["individual_figsize"])
         _render_quantity_vs_ext(ax, subset, column, spec, config, x_value, series_list)
         fig.tight_layout()
         suffix = f"_x{x_value:g}" if multi_x else ""
@@ -562,6 +578,7 @@ def plot_quantity_vs_ext(data, column, spec, config):
                     / f"{column}_vs_ext_{config['study_name']}{suffix}.jpeg")
         fig.savefig(out_path, dpi=config["dpi"])
         saved.append(out_path)
+        _finish_figure(fig, config)
     return saved
 
 
@@ -594,6 +611,7 @@ def plot_all_together_vs_ext(data, config):
                     / f"{config['study_name']}_ext_subplots{suffix}.jpeg")
         fig.savefig(out_path, dpi=config["dpi"])
         saved.append(out_path)
+        _finish_figure(fig, config)
     return saved
 
 
@@ -680,9 +698,6 @@ def run_study(config):
     if config["save_report"]:
         print(f"Saved {write_report(config, table_str, fits)}")
         print(f"Saved {write_fit_stats_csv(config, fits)}")
-
-    if config["show_plots"]:
-        plt.show()
 
 
 def init_argparse(args=None):
