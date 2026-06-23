@@ -29,7 +29,7 @@
         }
     },
     "datasets": [
-        {"x": -6, "series": "Standard", "table": "./examples/VR-6_standard_deltaV/plots/avg*/extension_summary.csv"},
-        {"x": -6, "series": "Increased", "table": "./examples/VR-6_increased_deltaV/plots/cds*/extension_summary.csv"}
+        {"x": -6, "series": "Standard", "table": "./examples/images/VR-6_standard_deltaV/plots/avg*/extension_summary.csv"},
+        {"x": -6, "series": "Increased", "table": "./examples/images/VR-6_increased_deltaV/plots/cds*/extension_summary.csv"}
     ]
 }
