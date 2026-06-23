@@ -61,6 +61,28 @@ pip install .
 
 ## Usage
 
+### Command-line interface
+
+There are three ways to run the analysis:
+
+**1. As a console script** (after pip installation):
+
+```bash
+run-nonlinearity-studies [OPTIONS] <file_string>
+```
+You can also put `file_string` and any option below in a JSON file and run with `-j path/to/config.json`. Every boolean flag has a matching `--no-<flag>` variant for overriding a JSON-config `true` from the command line.
+
+**2. As a Python module** (works during development):
+```bash
+python -m nonlinearity_studies.run_nonlinearity_studies [OPTIONS] <file_string>
+```
+
+**3. As a direct executable** (requires executable permissions - should be activated automatically but if not run `chmod +x nonlinearity_studies/run_nonlinearity_studies.py`):
+
+```bash
+./nonlinearity_studies/run_nonlinearity_studies.py [OPTIONS] <file_string>
+```
+
 ### As a Python module
 
 ```python
@@ -103,28 +125,6 @@ plot_nonlinearity(
     peaks_ext, parabola_coeffs, peak_charge_e_ext, charge_minus_npeak_ext,
     fit_range_right_ext=500,
 )
-```
-
-### Command-line interface
-
-There are three ways to run the analysis:
-
-**1. As a console script** (after pip installation):
-
-```bash
-run-nonlinearity-studies [OPTIONS] <file_string>
-```
-You can also put `file_string` and any option below in a JSON file and run with `-j path/to/config.json`. Every boolean flag has a matching `--no-<flag>` variant for overriding a JSON-config `true` from the command line.
-
-**2. As a Python module** (works during development):
-```bash
-python -m nonlinearity_studies.run_nonlinearity_studies [OPTIONS] <file_string>
-```
-
-**3. As a direct executable** (requires executable permissions - should be activated automatically but if not run `chmod +x nonlinearity_studies/run_nonlinearity_studies.py`):
-
-```bash
-./nonlinearity_studies/run_nonlinearity_studies.py [OPTIONS] <file_string>
 ```
 
 #### Options
