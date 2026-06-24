@@ -777,11 +777,53 @@ def summarize_resolution(results_ext, save_path=None):
 #---------------- Plot all electron peaks ----------------------------
 # Input is list of data from each of four extensions
 # ylim can be 'none' or tuple=(ylim_bottom, ylim_top)
-def plot_all_peaks(counts_ext, 
-                   peaks_ext, 
-                   centers_ext, 
+def _auto_ylim_in_window(centers, counts, xlim_e, yscale='linear', pad=0.05):
+    """Tight y-limits framing only the histogram bars inside the x-window.
+
+    Used when ylim is 'none' for plot_all_peaks: rather than letting matplotlib
+    autoscale to the full distribution (dominated by the tall low-charge peaks), zoom
+    to the tallest bar whose center falls within ``xlim_e`` so the peaks in the
+    displayed x-range are actually visible. ``xlim_e`` may be a (left, right) pair; any
+    other value (e.g. the sentinel 'none') means "use every bar". Returns (bottom, top),
+    or None when the window contains no bars (so the caller leaves autoscale untouched).
+    """
+    centers = np.asarray(centers, dtype=float)
+    counts = np.asarray(counts, dtype=float)
+
+    use_window = (
+        isinstance(xlim_e, (list, tuple)) and len(xlim_e) == 2
+        and all(isinstance(v, (int, float, np.integer, np.floating)) for v in xlim_e)
+    )
+    if use_window:
+        left, right = min(xlim_e), max(xlim_e)
+        in_window = (centers >= left) & (centers <= right)
+    else:
+        in_window = np.ones(centers.shape, dtype=bool)
+
+    selected = counts[in_window]
+    selected = selected[np.isfinite(selected)]
+    if selected.size == 0:
+        return None
+
+    top = float(np.max(selected))
+    if top <= 0:
+        return None
+
+    if yscale == 'log':
+        positive = selected[selected > 0]
+        bottom = float(np.min(positive)) * 0.5 if positive.size else 0.5
+        top *= (1.0 + pad) * 1.5
+    else:
+        bottom = 0.0
+        top *= (1.0 + pad)
+    return (bottom, top)
+
+
+def plot_all_peaks(counts_ext,
+                   peaks_ext,
+                   centers_ext,
                    xlim=(500,510),
-                   ylim=(0,100),
+                   ylim='none',
                    yscale='linear', 
                    plot_individual=False, plot_together=False,
                    draw_lines=True, linecolor='r', linestyle='--',
@@ -823,8 +865,12 @@ def plot_all_peaks(counts_ext,
             ylim_e = ylim[ext] if isinstance(ylim, list) else ylim
             if xlim_e!='none':
                 ax.set_xlim(xlim_e)
-            if ylim_e!='none':
+            if ylim_e != 'none':
                 ax.set_ylim(ylim_e)
+            else:
+                auto_ylim = _auto_ylim_in_window(centers, counts, xlim_e, yscale)
+                if auto_ylim is not None:
+                    ax.set_ylim(auto_ylim)
 
             # draw vertical lines and labels at each peak
             if draw_lines:
@@ -855,6 +901,7 @@ def plot_all_peaks(counts_ext,
         if show_titles:
             fig.suptitle(f'{additional_title}{suptitle} (Nimages = {nimages})')
 
+        _auto_ylims = []
         for ext, counts in enumerate(counts_ext):
             peaks=peaks_ext[ext]
             centers=centers_ext[ext]
@@ -870,8 +917,13 @@ def plot_all_peaks(counts_ext,
             ylim_e = ylim[ext] if isinstance(ylim, list) else ylim
             if xlim_e!='none':
                 ax.set_xlim(xlim_e)
-            if ylim_e!='none':
+            if ylim_e != 'none':
                 ax.set_ylim(ylim_e)
+            else:
+                auto_ylim = _auto_ylim_in_window(centers, counts, xlim_e, yscale)
+                if auto_ylim is not None:
+                    ax.set_ylim(auto_ylim)
+                    _auto_ylims.append(auto_ylim)
             ax.set_title(f'EXT {ext + 1}')
 
             # draw vertical lines and labels at each peak
@@ -890,6 +942,12 @@ def plot_all_peaks(counts_ext,
                             horizontalalignment='center',
                             color=linecolor,
                             fontsize=peak_number_label_size)
+
+        # With sharey=True the per-axis set_ylim above lets the last extension dictate
+        # the shared range; when auto-zooming to 'none', widen to span every extension's
+        # window so no extension's peaks get clipped.
+        if sharey and _auto_ylims:
+            axs[0].set_ylim(min(b for b, _ in _auto_ylims), max(t for _, t in _auto_ylims))
 
         for i in (0, 1):
             axs[i].set_xlabel('')

@@ -221,12 +221,18 @@ python scripts/meta_studies.py -j "config/VR6_deltaV_vs_ext_study.json"
 To compare the resolution at different deltaV:
 
 ```bash
-python scripts/meta_studies.py -j "config/VR6_deltaV_study.json" \
+run-nonlinearity-studies \
+    "examples/images/VR-6_increased_deltaV/stitched-fits/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched.fits"  \
+    -j "config/resolution_study.json" \
+run-nonlinearity-studies \
+    "examples/images/VR-6_standard_deltaV/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits"  \
+    -j "config/resolution_study.json" \
+python scripts/meta_studies.py -j "config/VR6_deltaV_study.json"
 ```
 
 ### JSON config
 
-It's easier to control all options using a JSON file instead of changing parameters on the command line. Check out the `/config` directory for examples of JSON files for different uses (make sure to change any hard-coded file names that aren't in `\examples`). A config for `run-nonlinearity-studies` looks like:
+It's easier to control all options using a JSON file instead of changing parameters on the command line. Check out the `/config` directory for examples of JSON files for different use cases, making sure to change any hard-coded file names that are not referenced in `\examples`. A config for `run-nonlinearity-studies` looks like:
 
 ```json
 {

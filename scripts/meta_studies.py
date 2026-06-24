@@ -85,7 +85,7 @@ CONFIG_KEYS = {
     "subplots_ncols",
 }
 
-REQUIRED_KEYS = {"study_name", "x_label", "output_dir", "quantities", "datasets"}
+REQUIRED_KEYS = {"study_name", "x_label", "quantities", "datasets"}
 
 
 def load_config(config_path):
@@ -111,6 +111,10 @@ def load_config(config_path):
         raise ValueError(f"Missing required config option(s): {', '.join(missing)}.")
 
     # Defaults.
+    # Fall back to the current working directory when output_dir is omitted or
+    # explicitly null, so outputs always have somewhere to go.
+    if config.get("output_dir") is None:
+        config["output_dir"] = "."
     config.setdefault("x_axis", "value")
     config.setdefault("invert_x", False)
     config.setdefault("series_label", None)

@@ -2,7 +2,7 @@
     "study_name": "VR6_deltaV",
     "x_label": "VR (V)",
     "invert_x": true,
-    "output_dir": "null",
+    "output_dir": null,
     "series_label": "deltaV",
     "plot_together": true,
     "series_same_plot": true,
