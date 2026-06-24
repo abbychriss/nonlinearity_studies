@@ -218,6 +218,12 @@ or compare these values versus extension `config/VR6_deltaV_vs_ext_study.json`
 python scripts/meta_studies.py -j "config/VR6_deltaV_vs_ext_study.json"
 ```
 
+To compare the resolution at different deltaV:
+
+```bash
+python scripts/meta_studies.py -j "config/VR6_deltaV_study.json" \
+```
+
 ### JSON config
 
 It's easier to control all options using a JSON file instead of changing parameters on the command line. Check out the `/config` directory for examples of JSON files for different uses (make sure to change any hard-coded file names that aren't in `\examples`). A config for `run-nonlinearity-studies` looks like:

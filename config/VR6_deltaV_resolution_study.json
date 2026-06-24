@@ -1,0 +1,31 @@
+{
+    "study_name": "VR6_deltaV_resolution",
+    "x_label": "deltaV",
+    "invert_x": true,
+    "output_dir": null,
+    "series_label": "Charge (e-)",
+    "series_column": "q",
+    "series_same_plot": false,
+    "uniform_series_style": true,
+    "plot_together": false,
+    "quantities": {
+        "sigma_e": {
+            "ylabel": "Resolution sigma (e-)",
+            "title": "Resolution vs VDD"
+        },
+        "reduced_chi2": {
+            "ylabel": "Reduced $\\chi^2$",
+            "title": "Fit reduced $\\chi^2$ vs VDD"
+        },
+        "delta_aic": {
+            "ylabel": "$\\Delta$AIC",
+            "title": "$\\Delta$AIC vs VDD"
+        }
+    },
+    "datasets": [
+        {"x": 0, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-19/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_3552f8dd/resolution_summary.csv"},
+        {"x": 1, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-20/plots/cts_avg_img_L2_250x3500x500_1x1_L2_124_10_stitched_ee62e0f0/resolution_summary.csv"}
+    ],
+    "individual_figsize": [9,6.5],
+    "subplots_figsize": [13,10]
+}

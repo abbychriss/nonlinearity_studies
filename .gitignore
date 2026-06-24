@@ -26,4 +26,4 @@ stitched-fits/
 plots/
 *.jpeg
 *.jpg
-*.pedsub.fits
+*.pedsub*.fits
