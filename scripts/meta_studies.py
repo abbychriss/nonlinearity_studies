@@ -111,10 +111,6 @@ def load_config(config_path):
         raise ValueError(f"Missing required config option(s): {', '.join(missing)}.")
 
     # Defaults.
-    # Fall back to the current working directory when output_dir is omitted or
-    # explicitly null, so outputs always have somewhere to go.
-    if config.get("output_dir") is None:
-        config["output_dir"] = "."
     config.setdefault("x_axis", "value")
     config.setdefault("invert_x", False)
     config.setdefault("series_label", None)
@@ -146,6 +142,12 @@ def load_config(config_path):
             raise ValueError(
                 f"'exclude_ext' must be a list of extension numbers: {dataset!r}"
             )
+
+    # When output_dir is omitted or explicitly null, default to the lowest common
+    # parent directory of the table paths, so results land alongside the source
+    # tables rather than in the (often unrelated) current working directory.
+    if config.get("output_dir") is None:
+        config["output_dir"] = _lowest_common_parent(config["datasets"])
 
     return config
 
@@ -201,6 +203,25 @@ def _resolve_table_path(table):
         f"Table path {table!r} is ambiguous; {len(matches)} files match: "
         f"{', '.join(matches)}. Make the pattern more specific."
     )
+
+
+def _lowest_common_parent(datasets):
+    """Lowest common ancestor directory of the dataset tables.
+
+    Used as the default output location when ``output_dir`` is null/omitted. Table
+    paths may be globs, so each is resolved to a concrete file first; the common
+    ancestor of their parent directories is then returned as an absolute path.
+    """
+    parent_parts = [
+        Path(_resolve_table_path(dataset["table"])).resolve().parent.parts
+        for dataset in datasets
+    ]
+    common = []
+    for components in zip(*parent_parts):
+        if len(set(components)) != 1:
+            break
+        common.append(components[0])
+    return Path(*common)
 
 
 def load_datasets(config):

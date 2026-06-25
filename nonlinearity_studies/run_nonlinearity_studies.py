@@ -417,7 +417,7 @@ def main(args=None):
     run_hash = _run_hash(args)
     fig_path = fig_path / f'{fits_file_path.stem}_{run_hash}'
 
-    if save_plots:
+    if save_plots or save_csv:
         fig_path.mkdir(parents=True, exist_ok=True)
         config_snapshot_path = fig_path / 'config.json'
         snapshot = {
@@ -428,7 +428,8 @@ def main(args=None):
         with config_snapshot_path.open('w', encoding='utf-8') as f:
             json.dump(snapshot, f, indent=2, sort_keys=True, default=str)
         print(f'Run hash: {run_hash}')
-        print(f'Plots and config snapshot will be saved to {fig_path}')
+        outputs = 'Plots' if save_plots else 'CSV output'
+        print(f'{outputs} and config snapshot will be saved to {fig_path}')
 
     image_name = fits_file_path.name
 
@@ -870,7 +871,7 @@ You can enable any combination of steps using flags below.""",
                         help="Right charge bound (in electrons) for the parabolic nonlinearity fit. Accepts: a single int applied to all extensions (e.g. 500), one int per extension (e.g. 600 850 750 1050), or the literal 'auto' to enable the data-driven estimator that picks the value minimizing var(a) of the parabola fit per extension.")
     parser.add_argument("--auto_fit_range_tolerance", type=float,
                        default=_config_default(config, 'auto_fit_range_tolerance', None),
-                        help="(Only with --fit_range_right auto) If set, among candidates whose score is within (1+tolerance)*min_score, pick the smallest charge. Prevents overestimation when the covariance curve is flat/noisy. E.g. 0.10 = 10%.")
+                        help="(Only with --fit_range_right auto) If set, among candidates whose score is within (1+tolerance)*min_score, pick the smallest charge. Prevents overestimation when the covariance curve is flat/noisy. E.g. 0.10 = 10%%.")
     parser.add_argument("--auto_fit_range_max_charge_percentile", type=float,
                        default=_config_default(config, 'auto_fit_range_max_charge_percentile', None),
                         help="(Only with --fit_range_right auto) If set, cap max_charge at this percentile of detected peak charges (e.g. 90). Keeps candidates out of the noisy upper tail.")
@@ -895,7 +896,7 @@ You can enable any combination of steps using flags below.""",
                         help="(Changepoint method) number of consecutive points that must exceed the threshold to count as the noise onset. Higher = more robust to isolated outliers / precursor bumps.")
     parser.add_argument("--fit_range_confidence_tol", type=float,
                         default=_config_default(config, 'fit_range_confidence_tol', 0.15),
-                        help="(Changepoint method) relative tolerance for the var(a) cross-check. Extensions where changepoint and var(a) disagree by more than this fraction are flagged 'LOW' confidence for review. E.g. 0.15 = 15%.")
+                        help="(Changepoint method) relative tolerance for the var(a) cross-check. Extensions where changepoint and var(a) disagree by more than this fraction are flagged 'LOW' confidence for review. E.g. 0.15 = 15%%.")
     parser.add_argument("--noise_onset_window", type=int, default=30,
                         help="(Noise-onset method) sliding window size in peaks for the local quadratic fit / MAD.")
     parser.add_argument("--noise_onset_factor", type=float, default=2.5,

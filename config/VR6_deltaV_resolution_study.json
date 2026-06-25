@@ -1,7 +1,7 @@
 {
     "study_name": "VR6_deltaV_resolution",
-    "x_label": "deltaV",
-    "invert_x": true,
+    "x_label": "deltaV of SW (V)",
+    "invert_x": false,
     "output_dir": null,
     "series_label": "Charge (e-)",
     "series_column": "q",
@@ -11,20 +11,20 @@
     "quantities": {
         "sigma_e": {
             "ylabel": "Resolution sigma (e-)",
-            "title": "Resolution vs VDD"
+            "title": "Resolution sigma vs deltaV (VR = -6V)"
         },
         "reduced_chi2": {
             "ylabel": "Reduced $\\chi^2$",
-            "title": "Fit reduced $\\chi^2$ vs VDD"
+            "title": "Fit reduced $\\chi^2$ vs deltaV (VR = -6V)"
         },
         "delta_aic": {
             "ylabel": "$\\Delta$AIC",
-            "title": "$\\Delta$AIC vs VDD"
+            "title": "$\\Delta$AIC vs deltaV (VR = -6V)"
         }
     },
     "datasets": [
-        {"x": 0, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-19/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_3552f8dd/resolution_summary.csv"},
-        {"x": 1, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-20/plots/cts_avg_img_L2_250x3500x500_1x1_L2_124_10_stitched_ee62e0f0/resolution_summary.csv"}
+        {"x": 7, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-6/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_eecf5613/resolution_summary.csv"},
+        {"x": 10, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR_6_Diego_params/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_11_stitched_7f196d34/resolution_summary.csv"}
     ],
     "individual_figsize": [9,6.5],
     "subplots_figsize": [13,10]

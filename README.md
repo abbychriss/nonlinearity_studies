@@ -129,7 +129,7 @@ plot_nonlinearity(
 
 ## Examples
 
-For the first example, we will fit the zero and one electron peaks for a single 250x3500 image with 1x1 binning and 500 skips. Navigate to project directory in terminal and run:
+In the following examples, I will assume you are working from the base `nonlinearity_studies` directory. For the first example, we will fit the zero and one electron peaks for a single 250x3500 image with 1x1 binning and 500 skips. Navigate to project directory in terminal and run:
 
 ```bash
 run-nonlinearity-studies \
@@ -184,18 +184,18 @@ run-nonlinearity-studies \
     --plot_resolution_together --save_plots --save_csv
 ```
 
-Or can use the json config in `config/resolution_study.json`:
+Or can use the json config in `examples/config/resolution_study.json`:
 
 ```bash
 run-nonlinearity-studies \
     "examples/images/VR-3/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
-    -j "config/resolution_study.json"
+    -j examples/config/resolution.json
 ```
 
 Now say you are studying the effect of a variable such as deltaV on nonlinearity. Then the script `meta_studies.py` in the `scripts` directory can compare the results of those studies. First run the nonlinearity studies to get an `extension_summary.csv` table for each deltaV, either by changing the image parameter and titles in `default_nonlinearity.json` appropriately and running
 
 ```bash
-run-nonlinearity-studies -j config/default_nonlinearity.json
+run-nonlinearity-studies -j examples/config/nonlinearity.json
 ```
 
 or changing them on the command line
@@ -210,12 +210,12 @@ run-nonlinearity-studies "examples/images/VR-6_increased_deltaV/*" --stitch_fits
 Then you can plot the noise/gain/nonlinearity versus deltaV per extension using `config/VR6_deltaV_vs_ext_study.json` by running
 
 ```bash
-python scripts/meta_studies.py -j "config/VR6_deltaV_study.json"
+python scripts/meta_studies.py -j examples/config/VR6_deltaV_study.json
 ```
-or compare these values versus extension `config/VR6_deltaV_vs_ext_study.json` 
+or compare these values versus extension
 
 ```bash
-python scripts/meta_studies.py -j "config/VR6_deltaV_vs_ext_study.json"
+python scripts/meta_studies.py -j examples/config/VR6_deltaV_vs_ext_study.json
 ```
 
 To compare the resolution at different deltaV:
@@ -223,11 +223,87 @@ To compare the resolution at different deltaV:
 ```bash
 run-nonlinearity-studies \
     "examples/images/VR-6_increased_deltaV/stitched-fits/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched.fits"  \
-    -j "config/resolution_study.json" \
+    -j examples/config/resolution.json \
 run-nonlinearity-studies \
     "examples/images/VR-6_standard_deltaV/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits"  \
-    -j "config/resolution_study.json" \
-python scripts/meta_studies.py -j "config/VR6_deltaV_study.json"
+    -j examples/config/resolution.json \
+python scripts/meta_studies.py -j examples/config/VR6_deltaV_study.json
+```
+
+### `meta_studies.py` config options
+
+`meta_studies.py` is a general purpose script to compare the results of multiple datasets in a study, driven by a JSON config. For each dataset that you are comparing, you must specify an `x` value (the parameter the dataset represents) and a `table` (the path to a csv file containing the results, which may contain glob wildcards, e.g. `plots/avg*/extension_summary.csv`); a dataset may also carry `"exclude_ext": [...]` to drop specific extensions from that dataset only.
+
+Required keys: `study_name`, `x_label`, `quantities`, `datasets`. Everything else is optional with the defaults shown below.
+
+Common options (apply to both use cases):
+
+- `study_name`: short name used in output filenames and default titles.
+- `x_label`: axis label for the varied parameter; a `"NAME (UNIT)"` form (e.g. `"VR (V)"`) attaches the unit to values in titles.
+- `quantities`: map of CSV column → spec. Each spec may set `ylabel`, `title`, `title_vs_ext`, `fit_line` (per-quantity override), and `column` (absolute 0-based CSV index, to pull a column regardless of its header name).
+- `datasets`: list of `{"x": ..., "table": ..., (optional) "series": ..., "exclude_ext": [...]}`.
+- `x_axis`: `"value"` (default) plots the varied parameter on the x-axis, one line per extension; `"extension"` flips it so extension is the x-axis, each series a coloured line, and the x value pinned in the title (one figure per distinct x).
+- `invert_x` (default `false`): reverse the x-axis (e.g. high VR → low VR).
+- `output_dir` (default: lowest common parent directory of the table paths, when omitted or `null`): where figures, the report, and fit-stats CSV are written.
+- `colors` (default Tableau 10): list (cycled per extension) or `{ext: color}` map.
+- `dpi` (default `350`), `show_plots` (default `true`), `save_report` (default `true`).
+- `plot_individual` (default `true`): one figure per quantity. `plot_together` (default `false`): all quantities as subplots in one figure.
+- `individual_figsize` (default `[9, 6.5]`), `subplots_figsize` (default `[13, 10]`), `subplots_ncols` (default: roughly square grid).
+- `fit_line` (default `false`): global toggle for fitting `y = slope·x + intercept` per line (percentage change is always reported).
+
+Series options (how a second dimension is split into separate lines):
+
+- `series_label`: human-readable name for the series dimension, used in legends/titles.
+- `series_same_plot` (default `true`): overlay all series on one figure vs. split onto one figure per series.
+- `uniform_series_style` (default `false`): when split, force every per-series figure to use the same solid line and circle marker so the figures don't look gratuitously different.
+- `series_line_styles` / `series_markers`: `{series: style}` / `{series: marker}` maps. Markers otherwise only differ between series when there is a single x value (each line is a lone point and the linestyle is invisible).
+
+**Use case 1 — `extension_summary.csv` (vary a parameter across runs).** The series is a per-dataset tag (`"series"`), constant across each table — e.g. standard vs. increased deltaV at the same VR. See `config/VR6_deltaV_study.json`:
+
+```json
+{
+  "study_name": "VR6_deltaV",
+  "x_label": "VR (V)",
+  "invert_x": true,
+  "series_label": "deltaV",
+  "series_same_plot": true,
+  "series_line_styles": {"Standard": "-", "Increased": "--"},
+  "series_markers": {"Standard": "o", "Increased": "s"},
+  "quantities": {
+    "gain_adu_per_e": {"ylabel": "Gain (ADU/e-)", "title": "Gain vs VR"},
+    "noise_e": {"ylabel": "Noise (e-)", "title": "Noise vs VR"},
+    "nonlinearity_at_500_e": {"ylabel": "Nonlinearity at 500 e- (e-)", "title": "Nonlinearity at 500 e- vs VR"}
+  },
+  "datasets": [
+    {"x": -6, "series": "Standard",  "table": "./examples/images/VR-6_standard_deltaV/plots/avg*/extension_summary.csv"},
+    {"x": -6, "series": "Increased", "table": "./examples/images/VR-6_increased_deltaV/plots/cds*/extension_summary.csv"}
+  ]
+}
+```
+
+**Use case 2 — `resolution_summary.csv` (split by a column within each table).** Set `series_column` and the series is read from that CSV column instead of a per-dataset tag, so a table with one row per charge `q` becomes one series per charge. `series_column` takes precedence over any `"series"` tag. This pairs naturally with `series_same_plot: false` and `uniform_series_style: true`. See `config/VR8_VDD_resolution_study.json`:
+
+```json
+{
+  "study_name": "VR8_VDD_resolution",
+  "x_label": "VDD (V)",
+  "invert_x": true,
+  "series_label": "Charge (e-)",
+  "series_column": "q",
+  "series_same_plot": false,
+  "uniform_series_style": true,
+  "plot_together": false,
+  "quantities": {
+    "sigma_e": {"ylabel": "Resolution sigma (e-)", "title": "Resolution sigma vs VDD"},
+    "reduced_chi2": {"ylabel": "Reduced $\\chi^2$", "title": "Fit reduced $\\chi^2$ vs VDD"},
+    "delta_aic": {"ylabel": "$\\Delta$AIC", "title": "$\\Delta$AIC vs VDD"}
+  },
+  "datasets": [
+    {"x": -19.0, "table": ".../VR-8_VDD-19/.../resolution_summary.csv"},
+    {"x": -20.5, "table": ".../VR-8_VDD-20.5/.../resolution_summary.csv"},
+    {"x": -21.5, "table": ".../VR-8_VDD-21.5/.../resolution_summary.csv"}
+  ]
+}
 ```
 
 ### JSON config
@@ -435,7 +511,7 @@ The cache is **not** automatically invalidated if the source FITS file itself ch
 
 ### Plotting Functions
 
-Each plotting function accepts `plot_individual` and `plot_together` toggles, individual + 2×2 figure sizes, `sharex`/`sharey` for the 2×2 grid, `show_titles`, `show_plots` (display interactively, or close the figure when `False`), and `save_plots`/`fig_path` for output.
+Each plotting function has `plot_individual` and `plot_together` options to plot each extension separately or as one subplot, individual + 2x2 subplot sizes, `sharex`/`sharey` for the 2×2 subplot, `show_titles`, `show_plots`, and `save_plots`/`fig_path` for output.
 
 - `plot_zero_one_peaks(data_ext, zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges, do_plot_adu=True, do_convert_to_electrons=False, yscale='linear', ...)`: Visualize zero/one electron peak fits in ADU and/or electrons.
 - `plot_all_peaks(counts_ext, peaks_ext, centers_ext, xlim, ylim='none', yscale='log', draw_lines=True, ...)`: Visualize the full charge distribution with a marker at each identified peak.
@@ -455,7 +531,7 @@ nonlinearity_studies/                # Repository root
 │   ├── resolution_study.json
 │   └── ...
 ├── examples/                        # Examples directory
-│   └── images/                      # Sample FITS/FZ images
+│   └── images/                      # Sample images
 ├── nonlinearity_studies/            # Main package directory
 │   ├── __init__.py                  # Package initialization
 │   ├── nonlinearity_studies.py      # Core analysis + plotting functions
@@ -469,12 +545,9 @@ nonlinearity_studies/                # Repository root
 └── README.md                        # This file
 ```
 
-Generated output (pedestal-subtracted FITS caches, the `plots/` directory, and `*.jpeg` figures) is git-ignored and not shown above.
-
-
 ## License
 
-This project is part of the Privitera research group at the University of Chicago for the DAMIC-M collaboration. Please contact the authors for licensing information.
+This project is part of the Privitera research group at the University of Chicago for the DAMIC-M collaboration.
 
 ## Authors
 
