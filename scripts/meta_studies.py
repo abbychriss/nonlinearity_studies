@@ -19,8 +19,10 @@ figures look needlessly different.
 By default every extension is drawn on one shared figure per quantity (one line
 per extension). Set ``"ext_separate_plot": true`` to instead give each extension
 its own figure, with the extension keeping its palette colour across the split
-figures. This only affects the value-axis individual plots; in
-``"x_axis": "extension"`` mode extension is already the x-axis.
+figures. This affects the value-axis plots -- both the individual per-quantity
+figures and the combined ``plot_together`` subplots figure (which fans out to one
+subplots figure per extension); in ``"x_axis": "extension"`` mode extension is
+already the x-axis.
 
 Set ``"x_axis": "extension"`` to flip the orientation: extension goes on the
 x-axis, each series becomes its own coloured line, and the independent-variable
