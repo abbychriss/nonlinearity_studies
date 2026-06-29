@@ -232,7 +232,7 @@ python scripts/meta_studies.py -j examples/config/VR6_deltaV_study.json
 
 ### `meta_studies.py` config options
 
-`meta_studies.py` is a general purpose script to compare the results of multiple datasets in a study, driven by a JSON config. For each dataset that you are comparing, you must specify an `x` value (the parameter the dataset represents) and a `table` (the path to a csv file containing the results, which may contain glob wildcards, e.g. `plots/avg*/extension_summary.csv`); a dataset may also carry `"exclude_ext": [...]` to drop specific extensions from that dataset only.
+`meta_studies.py` is a general purpose script to compare the results of multiple datasets in a study, driven by a JSON config. For each dataset that you are comparing, you must specify an `x` value (the parameter the dataset represents) and a `table` (the path to a csv file containing the results, which may contain glob wildcards, e.g. `plots/avg*/extension_summary.csv`). `table` may instead be a **list** of such paths to attach several tables to one `x` value (typically averaged together — see `use_average`). A dataset may also carry `"exclude_ext": [...]` to drop specific extensions from that dataset only.
 
 Required keys: `study_name`, `x_label`, `quantities`, `datasets`. Everything else is optional with the defaults shown below.
 
@@ -240,21 +240,29 @@ Common options (apply to both use cases):
 
 - `study_name`: short name used in output filenames and default titles.
 - `x_label`: axis label for the varied parameter; a `"NAME (UNIT)"` form (e.g. `"VR (V)"`) attaches the unit to values in titles.
-- `quantities`: map of CSV column → spec. Each spec may set `ylabel`, `title`, `title_vs_ext`, `fit_line` (per-quantity override), and `column` (absolute 0-based CSV index, to pull a column regardless of its header name).
-- `datasets`: list of `{"x": ..., "table": ..., (optional) "series": ..., "exclude_ext": [...]}`.
+- `quantities`: map of CSV column → spec. Each spec may set `ylabel`, `title`, `title_vs_ext`, `fit_line` and `connect_points` (per-quantity overrides), and `column` (absolute 0-based CSV index, to pull a column regardless of its header name).
+- `datasets`: list of `{"x": ..., "table": ..., (optional) "series": ..., "exclude_ext": [...]}`. `table` is a glob string or a list of glob strings.
 - `x_axis`: `"value"` (default) plots the varied parameter on the x-axis, one line per extension; `"extension"` flips it so extension is the x-axis, each series a coloured line, and the x value pinned in the title (one figure per distinct x).
 - `invert_x` (default `false`): reverse the x-axis (e.g. high VR → low VR).
 - `output_dir` (default: lowest common parent directory of the table paths, when omitted or `null`): where figures, the report, and fit-stats CSV are written.
 - `colors` (default Tableau 10): list (cycled per extension) or `{ext: color}` map.
-- `dpi` (default `350`), `show_plots` (default `true`), `save_report` (default `true`).
+- `dpi` (default `350`), `show_plots` (default `true`).
+- `save_output` (default `true`): master switch for writing anything to disk (figures, the text report, and the fit-stats CSV). Set it `false` to compute and preview without leaving files behind — the summary table is still printed and plots still appear on screen per `show_plots`.
+- `save_report` (default `true`): when `save_output` is on, also write the text report and fit-stats CSV (not just the figures).
+- `use_average` (default `false`): collapse rows that share the same `(x, series, ext)` — whether listed under one dataset's `table` or spread across datasets — into their mean (drawn as the opaque marker). The contributing raw values and their standard deviation are retained so the spread can be shown (see `show_actual_values` / `show_error_bars`).
+- `show_actual_values` (default `true`): when averaging pooled several tables, overlay each actual table value as a transparent marker at the same x (with a faint vertical line spanning their range, per `error_bar_line`). Points from a single table add nothing.
+- `show_error_bars` (default `false`): instead of (or in addition to) the actual values, draw mean ± std error bars with transparent caps. Kept as a separate option from `show_actual_values`.
+- `error_bar_line` (default `true`): whether the faint vertical line is drawn for whichever spread is shown (`show_actual_values` range and/or `show_error_bars` bar). Set `false` to keep just the transparent markers/caps without the connecting line.
 - `plot_individual` (default `true`): one figure per quantity. `plot_together` (default `false`): all quantities as subplots in one figure.
 - `individual_figsize` (default `[9, 6.5]`), `subplots_figsize` (default `[13, 10]`), `subplots_ncols` (default: roughly square grid).
 - `fit_line` (default `false`): global toggle for fitting `y = slope·x + intercept` per line (percentage change is always reported).
+- `connect_points` (default `null`): draw a plain line joining adjacent data points (separate from the fit line). Left `null` it follows the historical behaviour — points are connected only when they aren't being fit — so set it `true` to also connect points under a fit line, or `false` to show bare markers. Honoured globally or per quantity.
 
 Series options (how a second dimension is split into separate lines):
 
 - `series_label`: human-readable name for the series dimension, used in legends/titles.
 - `series_same_plot` (default `true`): overlay all series on one figure vs. split onto one figure per series.
+- `suppress_series_plot` (default `false`): hide the series distinction in the plots only — every series is drawn on one shared figure with a uniform style and a single `EXT{n}` legend entry per extension (overriding `series_same_plot` and `uniform_series_style` for plotting). The series are still kept in the printed table, fits, and report.
 - `uniform_series_style` (default `false`): when split, force every per-series figure to use the same solid line and circle marker so the figures don't look gratuitously different.
 - `series_line_styles` / `series_markers`: `{series: style}` / `{series: marker}` maps. Markers otherwise only differ between series when there is a single x value (each line is a lone point and the linestyle is invisible).
 

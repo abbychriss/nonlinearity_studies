@@ -21,6 +21,7 @@ Or after pip installation:
 
 import numpy as np
 import argparse
+import glob
 import hashlib
 import json
 from datetime import datetime
@@ -99,8 +100,30 @@ def _derive_data_path(file_path_str):
     dir_path = Path(directory_path)
     if not dir_path.is_absolute():
         dir_path = Path.cwd() / dir_path
-    
+
     return dir_path, image_pattern
+
+
+def _wildcard_free_base(pattern_str):
+    """Deepest leading directory of ``pattern_str`` that contains no glob wildcard.
+
+    When the file pattern spans multiple directories (e.g. ``.../PD07*/cds_avg*.fz``),
+    the stitched output must be anchored somewhere deterministic rather than inside a
+    literal wildcard-named folder (the old ``out_path`` reused ``PD07*`` verbatim, which
+    created an actual directory called ``PD07*``). This walks the leading path segments
+    up to the first one containing a glob magic character, so a concrete single
+    directory still gets its own ``stitched-fits`` subfolder, while a wildcard pattern
+    falls back to the common parent above the wildcard. Always returns an absolute path.
+    """
+    base_parts = []
+    for part in Path(pattern_str).parts:
+        if glob.has_magic(part):
+            break
+        base_parts.append(part)
+    base = Path(*base_parts) if base_parts else Path('.')
+    if not base.is_absolute():
+        base = Path.cwd() / base
+    return base
 
 
 CONFIG_KEYS = {
@@ -148,6 +171,9 @@ CONFIG_KEYS = {
     'force_pedsub',
     'use_biweight_loc',
     'use_biweight_midvar',
+    'zero_one_n_bins',
+    'zero_one_window_left_scale',
+    'zero_one_window_right_scale',
     'plot_zero_one_individual_figsize',
     'plot_zero_one_subplots_figsize',
     'plot_all_peaks_xlim',
@@ -200,6 +226,26 @@ def _load_json_config(config_path):
 
 def _config_default(config, key, fallback):
     return config[key] if key in config else fallback
+
+
+def _window_scale(value):
+    """argparse type for the zero/one fit-window scale factors: a float >= 1.0.
+
+    Values below 1 shrink the window inside the one-electron peak, leaving the
+    fit nothing to fit, so they are rejected up front."""
+    f = float(value)
+    if f < 1.0:
+        raise argparse.ArgumentTypeError(f"must be >= 1.0 (got {f})")
+    return f
+
+
+def _n_bins(value):
+    """argparse type for the zero/one histogram bin count: an integer >= 10
+    (the double-Gaussian has 6 free parameters, so fewer bins is ill-posed)."""
+    f = int(value)
+    if f < 10:
+        raise argparse.ArgumentTypeError(f"must be an integer >= 10 (got {f})")
+    return f
 
 
 def _normalize_scalar_or_list(value):
@@ -387,11 +433,16 @@ def main(args=None):
                 print('\nError: no files found matching the specified stitched FITS pattern.')
                 sys.exit(1)
         else:
+            # Anchor the output at the deepest wildcard-free directory of the pattern, so a
+            # multi-directory glob (e.g. PD07*/...) writes one combined file to a single
+            # 'stitched-fits' folder instead of a literal 'PD07*' directory. out_path is
+            # absolute, so it overrides stitch_fits's own file_path/out_path join.
+            out_path = (_wildcard_free_base(args.file_string) / stitched_dir_name).resolve()
             stitched_file = stitch_fits(
                 input_dir.parent,
                 directory=input_dir.name,
                 image=input_pattern,
-                out_path=Path(input_dir.name) / stitched_dir_name,
+                out_path=out_path,
                 print_header=verbose,
             )
             if stitched_file is None:
@@ -479,8 +530,10 @@ def main(args=None):
     # Fit zeroth and first electron peaks to double gaussians
     zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges = get_zero_one_peaks_ext(
         data_ext,
-        n=100,
+        n=args.zero_one_n_bins,
         fit_bounds='default',
+        window_left_scale=args.zero_one_window_left_scale,
+        window_right_scale=args.zero_one_window_right_scale,
     )
 
     # Extend the all-peaks histogram if a resolution charge sits near/above the
@@ -927,6 +980,19 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("--use_biweight_midvar", action="store_true",
                         default=_config_default(config, 'use_biweight_midvar', True),
                         help="If true, uses Tukey biweight midvariance. If false, uses standard deviation.")
+    parser.add_argument("--zero_one_n_bins", type=_n_bins,
+                        default=_config_default(config, 'zero_one_n_bins', 100),
+                        help="Number of bins spanning the zero/one fit window at window "
+                             "scale 1.0 (the count scales up automatically when the window "
+                             "is widened, keeping bin width constant). Integer >= 10. Default 100.")
+    parser.add_argument("--zero_one_window_left_scale", type=_window_scale,
+                        default=_config_default(config, 'zero_one_window_left_scale', 1.0),
+                        help="Scale the left half-width of the auto-computed zero/one fit "
+                             "window (>=1.0; >1 widens toward lower charge). Default 1.0.")
+    parser.add_argument("--zero_one_window_right_scale", type=_window_scale,
+                        default=_config_default(config, 'zero_one_window_right_scale', 1.0),
+                        help="Scale the right half-width of the auto-computed zero/one fit "
+                             "window (>=1.0; >1 widens past the one-electron peak). Default 1.0.")
     parser.add_argument("--plot_zero_one_individual_figsize", nargs=2, type=float,
                         default=_config_default(config, 'plot_zero_one_individual_figsize', [7, 5]),
                         metavar=('W', 'H'),
@@ -1061,6 +1127,15 @@ You can enable any combination of steps using flags below.""",
 
     if parsed_args.file_string is None:
         parser.error('file_string is required unless it is provided in the JSON config')
+
+    # argparse's `type` validates CLI strings but not config-supplied defaults, so
+    # re-check the window scales here to also reject values < 1 coming from the JSON.
+    for _scale_arg in ('zero_one_window_left_scale', 'zero_one_window_right_scale'):
+        if getattr(parsed_args, _scale_arg) < 1.0:
+            parser.error(f"{_scale_arg} must be >= 1.0 (got {getattr(parsed_args, _scale_arg)})")
+    if int(parsed_args.zero_one_n_bins) < 10:
+        parser.error(f"zero_one_n_bins must be an integer >= 10 (got {parsed_args.zero_one_n_bins})")
+    parsed_args.zero_one_n_bins = int(parsed_args.zero_one_n_bins)
 
     return parsed_args
 

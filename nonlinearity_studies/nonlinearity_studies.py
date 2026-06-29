@@ -31,7 +31,7 @@ from pedestal_subtract.core import (
     _pedsub_header_matches,
     pedestal_subtract_ext_cached,
     _finish_fig,
-    _fit_double_gauss_electrons,
+    _double_gauss_popt_electrons,
     plot_zero_one_peaks,
     get_fits,
     _value_for_extension,
