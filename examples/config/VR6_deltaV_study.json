@@ -1,0 +1,29 @@
+{
+    "study_name": "VR6_deltaV",
+    "x_label": "deltaV of SW",
+    "invert_x": false,
+    "output_dir": "./examples/VR-6_deltaV_meta",
+    "series_label": "VR",
+    "plot_together": true,
+    "series_same_plot": true,
+    "quantities": {
+        "gain_adu_per_e": {
+            "ylabel": "Gain (ADU/e-)",
+            "title": "Gain vs VR (deltaV comparison)"
+        },
+        "noise_e": {
+            "ylabel": "Noise (e-)",
+            "title": "Noise vs VR (deltaV comparison)"
+        },
+        "nonlinearity_at_500_e": {
+            "ylabel": "Nonlinearity at 500 e- (e-)",
+            "title": "Nonlinearity at 500 e- vs VR (deltaV comparison)"
+        }
+    },
+    "datasets": [
+        {"x": 7, "series": -6, "table": "./examples/images/VR-6_standard_deltaV/plots/avg*/extension_summary.csv"},
+        {"x": 10, "series": -6, "table": "./examples/images/VR-6_increased_deltaV/plots/cds*/extension_summary.csv"}
+    ],
+    "individual_figsize": [9,6.5],
+    "subplots_figsize": [13,10]
+}

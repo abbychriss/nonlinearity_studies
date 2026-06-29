@@ -1,13 +1,21 @@
 {
-    "study_name": "VR6_deltaV_vs_ext",
+    "study_name": "VR6_deltaV",
     "x_label": "VR (V)",
-    "x_axis": "extension",
-    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies",
+    "invert_x": true,
+    "output_dir": null,
     "series_label": "deltaV",
+    "plot_together": true,
     "series_same_plot": true,
     "suppress_series_plot": false,
-    "plot_together": true,
-    "invert_x": false,
+    "series_line_styles": {
+        "Standard": "-",
+        "Increased": "--"
+    },
+    "series_markers": {
+        "Standard": "o",
+        "Increased": "s"
+    },
+    "x_axis": "value",
     "colors": null,
     "dpi": 350,
     "show_plots": true,
@@ -23,21 +31,19 @@
     "ext_separate_plot": false,
     "subplots_ncols": null,
     "series_column": null,
-    "series_line_styles": null,
-    "series_markers": null,
     "uniform_series_style": false,
     "quantities": {
         "gain_adu_per_e": {
             "ylabel": "Gain (ADU/e-)",
-            "title_vs_ext": "Gain vs extension"
+            "title": "Gain vs VR (deltaV comparison)"
         },
         "noise_e": {
             "ylabel": "Noise (e-)",
-            "title_vs_ext": "Noise vs extension"
+            "title": "Noise vs VR (deltaV comparison)"
         },
         "nonlinearity_at_500_e": {
             "ylabel": "Nonlinearity at 500 e- (e-)",
-            "title_vs_ext": "Nonlinearity at 500 e- vs extension"
+            "title": "Nonlinearity at 500 e- vs VR (deltaV comparison)"
         }
     },
     "datasets": [
