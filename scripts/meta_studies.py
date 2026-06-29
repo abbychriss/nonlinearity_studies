@@ -523,21 +523,19 @@ def _yerr_for(sub, column):
     return yerr if np.isfinite(yerr).any() else None
 
 
-def _draw_std_errorbar(ax, xpos, ys, yerr, color, marker, markersize, bar_line):
+def _draw_std_errorbar(ax, xpos, ys, yerr, color, bar_line):
     """Overlay mean±std error bars (dimmed to FIT_ALPHA) on already-drawn points.
 
     ``fmt="none"`` so only the bars/caps are drawn (the opaque mean markers are
-    drawn separately). The caps take the data marker at its size; ``bar_line``
-    false hides the vertical bar between the caps but keeps the caps.
+    drawn separately). The caps are matplotlib's default horizontal error-bar
+    dashes (classic error bars), distinct from the transparent circles used for
+    the actual values; ``bar_line`` false hides the vertical bar between the caps
+    but keeps the caps.
     """
     if yerr is None:
         return
     container = ax.errorbar(xpos, ys, yerr=yerr, fmt="none", ecolor=color, capsize=3)
     _, caplines, barlinecols = container
-    for cap in caplines:
-        cap.set_marker(marker)
-        cap.set_markersize(markersize)
-        cap.set_color(color)
     for artist in (*caplines, *barlinecols):
         artist.set_alpha(FIT_ALPHA)
     if not bar_line:
@@ -572,7 +570,7 @@ def _draw_spread(ax, xpos, sub, column, color, marker, markersize, config):
     """Draw the configured spread (std error bars and/or raw values) on points."""
     if config["show_error_bars"]:
         _draw_std_errorbar(ax, xpos, sub[column].to_numpy(dtype=float),
-                           _yerr_for(sub, column), color, marker, markersize,
+                           _yerr_for(sub, column), color,
                            config["error_bar_line"])
     if config["show_actual_values"]:
         _draw_actual_values(ax, xpos, sub, column, color, marker, markersize,
@@ -720,7 +718,12 @@ def plot_quantity(data, column, spec, config, fits):
 
 
 def plot_all_together(data, config, fits):
-    """Plot every quantity as subplots in one figure. Returns the saved path."""
+    """Plot every quantity as subplots in one figure. Returns the saved paths.
+
+    With ext_separate_plot each extension gets its own subplots figure (one
+    quantity per cell, that single extension's line, keeping its palette colour);
+    otherwise all extensions are overlaid in each cell as before.
+    """
     series_list = [s for s in data["series"].dropna().unique()]
     quantities = list(config["quantities"].items())
     n = len(quantities)
@@ -729,23 +732,33 @@ def plot_all_together(data, config, fits):
     nrows = -(-n // ncols)  # ceil
     figsize = config["subplots_figsize"] or [6.5 * ncols, 5.5 * nrows]
 
-    fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
-    flat_axes = axes.flatten()
-    for ax, (column, spec) in zip(flat_axes, quantities):
-        # Subplots overlay series in each cell (one cell per quantity); shrink the
-        # legend so it doesn't crowd out the data at subplot scale.
-        _render_quantity(ax, data, column, spec, config, fits, series_list, None,
-                         legend_fontsize="small")
-    for ax in flat_axes[n:]:
-        ax.set_visible(False)
+    if config["ext_separate_plot"]:
+        all_exts = sorted(data["ext"].unique())
+        groups = [(data[data["ext"] == e], f"_ext{e}", all_exts) for e in all_exts]
+    else:
+        groups = [(data, "", None)]
 
-    fig.tight_layout()
-    out_path = None
-    if config["save_output"]:
-        out_path = Path(config["output_dir"]) / f"{config['study_name']}_subplots.jpeg"
-        fig.savefig(out_path, dpi=config["dpi"])
-    _finish_figure(fig, config)
-    return out_path
+    saved = []
+    for subset, suffix, color_exts in groups:
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
+        flat_axes = axes.flatten()
+        for ax, (column, spec) in zip(flat_axes, quantities):
+            # Subplots overlay series in each cell (one cell per quantity); shrink the
+            # legend so it doesn't crowd out the data at subplot scale.
+            _render_quantity(ax, subset, column, spec, config, fits, series_list, None,
+                             legend_fontsize="small", color_extensions=color_exts)
+        for ax in flat_axes[n:]:
+            ax.set_visible(False)
+
+        fig.tight_layout()
+        out_path = None
+        if config["save_output"]:
+            out_path = (Path(config["output_dir"])
+                        / f"{config['study_name']}_subplots{suffix}.jpeg")
+            fig.savefig(out_path, dpi=config["dpi"])
+        saved.append(out_path)
+        _finish_figure(fig, config)
+    return saved
 
 
 def _series_tag(label, value):
@@ -971,7 +984,7 @@ def run_study(config):
 
     if config["plot_together"]:
         paths = (plot_all_together_vs_ext(data, config) if vs_extension
-                 else [plot_all_together(plot_data, config, plot_fits)])
+                 else plot_all_together(plot_data, config, plot_fits))
         for path in paths:
             if path:
                 print(f"Saved {path}")
