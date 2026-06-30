@@ -32,6 +32,23 @@ import matplotlib.pyplot as plt
 
 plt.rcParams['font.size'] = 12  # bump default for axis labels, tick labels, legends
 
+# Overscan / fit-column / gain-seed plumbing is reused from pedestal_subtract rather
+# than re-implemented here: the coercion + per-extension normalization helpers live in
+# its CLI module, the FITS-header geometry readers in its core. Importing __main__ as a
+# submodule (not as the entry point) leaves its main() guarded and unexecuted.
+from pedestal_subtract.core import (
+    overscan_cols_from_header,
+    get_fits_header,
+    _scalar_for_extension,
+)
+from pedestal_subtract.__main__ import (
+    OVERSCAN_COLS,
+    _overscan_ext_indices,
+    _coerce_fit_cols,
+    _normalize_fit_cols,
+    _coerce_gain_guess,
+)
+
 # Handle imports for both direct execution and module import
 if __name__ == "__main__":
     # When run as script, add parent directory to path
@@ -169,11 +186,16 @@ CONFIG_KEYS = {
     'pedestal_subtraction_axis',
     'pedsub_cache_dir',
     'force_pedsub',
+    'use_overscan_only',
+    'overscan_cols',
     'use_biweight_loc',
     'use_biweight_midvar',
     'zero_one_n_bins',
     'zero_one_window_left_scale',
     'zero_one_window_right_scale',
+    'zero_one_peakfind_density',
+    'fit_cols',
+    'zero_one_gain_guess',
     'plot_zero_one_individual_figsize',
     'plot_zero_one_subplots_figsize',
     'plot_all_peaks_xlim',
@@ -245,6 +267,16 @@ def _n_bins(value):
     f = int(value)
     if f < 10:
         raise argparse.ArgumentTypeError(f"must be an integer >= 10 (got {f})")
+    return f
+
+
+def _peakfind_density(value):
+    """argparse type for the peak-finding histogram density (bins per ADU): a
+    number >= 1, used only to locate the zero/one peaks, independent of the
+    fit/plot bin count set by --zero_one_n_bins."""
+    f = float(value)
+    if f < 1.0:
+        raise argparse.ArgumentTypeError(f"must be >= 1 (got {f})")
     return f
 
 
@@ -490,6 +522,30 @@ def main(args=None):
     # Load data from FITS file
     data_ext = get_fits(fits_path)
 
+    # Resolve the per-extension fit-column slice up front (before pedestal subtraction,
+    # which rebinds data_ext), so it is available to the fit-column restriction below.
+    fit_cols_ext = _normalize_fit_cols(args.fit_cols, len(data_ext))
+
+    # Per-extension overscan setting: each selected extension estimates its per-row
+    # pedestal from the overscan columns only (still subtracted from the full frame);
+    # the rest estimate from the full frame.
+    overscan_exts = _overscan_ext_indices(args.use_overscan_only, len(data_ext))
+    if overscan_exts:
+        # Prefer the overscan columns computed from the CCD-geometry header keys
+        # (PRESCAN, PHYSCOL, NCOL, NCOLPRE, NSBIN); fall back to --overscan_cols /
+        # the config value only when the header lacks those keys.
+        overscan_range = overscan_cols_from_header(get_fits_header(fits_path))
+        if overscan_range is None:
+            overscan_range = tuple(args.overscan_cols)
+            if verbose:
+                print(f'Overscan columns: header keys not found; using configured {overscan_range}')
+        elif verbose:
+            print(f'Overscan columns from header: {overscan_range} (last {-overscan_range[0]} columns)')
+    else:
+        overscan_range = tuple(args.overscan_cols)
+    overscan_cols = [overscan_range if i in overscan_exts else None
+                     for i in range(len(data_ext))]
+
     # If user specifies pedestal subtraction process, apply to all data before doing analysis
     # This will subtract the average baseline charge of specified axis (row/column) from that axis but keeps the data in ADU
     if args.do_pedestal_subtraction:
@@ -504,7 +560,20 @@ def main(args=None):
             cache_dir=args.pedsub_cache_dir,
             force=args.force_pedsub,
             verbose=verbose,
+            overscan_cols=overscan_cols,
         )
+
+    # Restrict the columns used for the zero/one fit (and the plotted histograms), if
+    # configured. Done after pedestal subtraction so the per-row pedestal (and any
+    # overscan estimate) still sees the full frame. The fit flattens each extension, so
+    # this only changes which pixels enter the zero/one histogram, not the geometry.
+    if any(fc is not None for fc in fit_cols_ext):
+        data_ext = [
+            np.asarray(d)[:, fc[0]:fc[1]] if fc is not None else d
+            for d, fc in zip(data_ext, fit_cols_ext)
+        ]
+        if verbose:
+            print(f'Restricting the fit columns per extension: {fit_cols_ext}')
 
     if fit_range_right_ext != 'auto':
         if not isinstance(fit_range_right_ext, list):
@@ -527,6 +596,13 @@ def main(args=None):
     if args.nimages is not None:
         nimages = args.nimages
 
+    if verbose and args.zero_one_gain_guess is not None:
+        # Show the per-extension gain seeds actually applied (resolved with the same
+        # helper the fit uses), so a single value is reported as the list it broadcasts to.
+        gain_seeds_ext = [_scalar_for_extension(args.zero_one_gain_guess, ext, len(data_ext))
+                          for ext in range(len(data_ext))]
+        print(f'Using guess for gains: {gain_seeds_ext}')
+
     # Fit zeroth and first electron peaks to double gaussians
     zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges = get_zero_one_peaks_ext(
         data_ext,
@@ -534,6 +610,8 @@ def main(args=None):
         fit_bounds='default',
         window_left_scale=args.zero_one_window_left_scale,
         window_right_scale=args.zero_one_window_right_scale,
+        peakfind_density=args.zero_one_peakfind_density,
+        gain_seed=args.zero_one_gain_guess,
     )
 
     # Extend the all-peaks histogram if a resolution charge sits near/above the
@@ -974,6 +1052,26 @@ You can enable any combination of steps using flags below.""",
                         help="Force recomputation of pedestal subtraction, ignoring any existing cache file.")
     parser.add_argument("--no-force_pedsub", dest="force_pedsub", action="store_false",
                         help="Use cached pedestal-subtracted data when params match (default)")
+    parser.add_argument("--use_overscan_only", nargs='*', type=int, metavar='EXT',
+                        default=_config_default(config, 'use_overscan_only', False),
+                        help="Estimate the per-row pedestal from the overscan columns "
+                             "(see --overscan_cols) only, then subtract it from the full "
+                             "frame. Give extension numbers (1-4) to apply to only those "
+                             "extensions, or pass the flag alone to apply to all. In the "
+                             "JSON config use true/false or a list like [1, 3]. "
+                             "(Put the FITS path before this flag, or in the config, so it "
+                             "isn't read as an extension number.)")
+    parser.add_argument("--no-use_overscan_only", dest="use_overscan_only",
+                        action="store_const", const=False,
+                        help="Estimate the pedestal from the full frame for all extensions (default).")
+    parser.add_argument("--overscan_cols", nargs=2, type=int,
+                        default=_config_default(config, 'overscan_cols', list(OVERSCAN_COLS)),
+                        metavar=('START', 'STOP'),
+                        help="Column range (Python half-open slice START:STOP) the per-row "
+                             "pedestal is estimated from when --use_overscan_only is set. "
+                             "Negative endpoints count from the right. Used only as a fallback "
+                             "when the FITS header lacks the CCD-geometry keys. Default: the "
+                             "last 147 columns ([-147:]).")
     parser.add_argument("--use_biweight_loc", action="store_true",
                         default=_config_default(config, 'use_biweight_loc', True),
                         help="If true, uses Tukey biweight location (more robust - iteratively gets rid of outliers). If false, uses simple average.")
@@ -993,6 +1091,34 @@ You can enable any combination of steps using flags below.""",
                         default=_config_default(config, 'zero_one_window_right_scale', 1.0),
                         help="Scale the right half-width of the auto-computed zero/one fit "
                              "window (>=1.0; >1 widens past the one-electron peak). Default 1.0.")
+    parser.add_argument("--zero_one_peakfind_density", type=_peakfind_density,
+                        default=_config_default(config, 'zero_one_peakfind_density', 10),
+                        help="Bins-per-ADU of the internal histograms used to LOCATE the zero/one "
+                             "peaks (separate from --zero_one_n_bins, which sets the fit/plot bins). "
+                             "Raise for finer detection, lower to aggregate sparse low-statistics "
+                             "hits. Number >= 1. Default 10.")
+    parser.add_argument("--fit_cols", nargs='+', type=int,
+                        default=_config_default(config, 'fit_cols', None),
+                        metavar='COL',
+                        help="Restrict the zero/one fit (and the plotted histograms) to image "
+                             "columns (a Python half-open slice START:STOP). Pass two ints "
+                             "(START STOP) to apply one range to every extension, or two per "
+                             "extension (e.g. 8 ints for 4 extensions) for per-extension ranges. "
+                             "Negative endpoints count from the right. Applied after pedestal "
+                             "subtraction, so the pedestal still uses the full frame/overscan. Omit "
+                             "to use all columns. In the JSON config use a [START, STOP] pair, or a "
+                             "per-extension list of [START, STOP]/null (null = all columns for that "
+                             "extension; null endpoints like [256, null] give an open-ended slice).")
+    parser.add_argument("--zero_one_gain_guess", nargs='+', type=float,
+                        default=_config_default(config, 'zero_one_gain_guess', None),
+                        metavar='GAIN',
+                        help="Seed for the one-electron peak location -- a guess for the gain "
+                             "(ADU/e-) -- used to initialize the double-Gaussian fit instead of "
+                             "auto-detecting the one-electron bump. Pass one value to apply it to "
+                             "every extension, or one per extension (e.g. 4 values for 4 "
+                             "extensions). In the JSON config use a single number or a "
+                             "per-extension list of numbers/null (null = auto-detect that "
+                             "extension). Omit to auto-detect for all. Values must be > 0.")
     parser.add_argument("--plot_zero_one_individual_figsize", nargs=2, type=float,
                         default=_config_default(config, 'plot_zero_one_individual_figsize', [7, 5]),
                         metavar=('W', 'H'),
@@ -1136,6 +1262,26 @@ You can enable any combination of steps using flags below.""",
     if int(parsed_args.zero_one_n_bins) < 10:
         parser.error(f"zero_one_n_bins must be an integer >= 10 (got {parsed_args.zero_one_n_bins})")
     parsed_args.zero_one_n_bins = int(parsed_args.zero_one_n_bins)
+    if float(parsed_args.zero_one_peakfind_density) < 1.0:
+        parser.error(f"zero_one_peakfind_density must be >= 1 (got {parsed_args.zero_one_peakfind_density})")
+    parsed_args.zero_one_peakfind_density = float(parsed_args.zero_one_peakfind_density)
+
+    # Group a flat CLI int list into column pairs (and validate the count) up front, so
+    # the stored value is the canonical pair / per-extension form.
+    try:
+        parsed_args.fit_cols = _coerce_fit_cols(parsed_args.fit_cols)
+    except ValueError as e:
+        parser.error(str(e))
+
+    # Collapse a single gain seed to a scalar (per-extension list otherwise) and check
+    # every supplied value is positive -- the gain (ADU/e-) is always > 0. argparse's
+    # `type` only validates CLI floats, so this per-entry check also covers config values.
+    parsed_args.zero_one_gain_guess = _coerce_gain_guess(parsed_args.zero_one_gain_guess)
+    _gg = parsed_args.zero_one_gain_guess
+    _gg_values = _gg if isinstance(_gg, list) else ([] if _gg is None else [_gg])
+    for v in _gg_values:
+        if v is not None and float(v) <= 0:
+            parser.error(f"zero_one_gain_guess values must be > 0 (got {v})")
 
     return parsed_args
 

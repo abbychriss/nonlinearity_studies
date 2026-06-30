@@ -1,10 +1,13 @@
 {
     "study_name": "VR6_deltaV",
+    "suptitle": null,
     "x_label": "VR (V)",
     "invert_x": true,
     "output_dir": null,
     "series_label": "deltaV",
     "plot_together": true,
+    "plot_mega": false,
+    "plot_overlaid": false,
     "series_same_plot": true,
     "suppress_series_plot": false,
     "series_line_styles": {
@@ -22,7 +25,7 @@
     "save_output": true,
     "save_report": true,
     "use_average": false,
-    "show_actual_values": true,
+    "show_multiple_values": true,
     "show_error_bars": false,
     "fit_line": false,
     "connect_points": null,

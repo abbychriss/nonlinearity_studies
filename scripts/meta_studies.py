@@ -8,21 +8,44 @@ chosen quantities against that variable, with one line per extension.
 
 Datasets may optionally carry a ``series`` tag (a sub-category of the
 independent variable, e.g. standard vs. increased deltaV at the same VR). Series
-share the extension colour and are distinguished by linestyle; when there is
-only one x value (each line is a lone point, so the linestyle is invisible) they
-are distinguished by marker instead. They can be overlaid on one figure or split
-onto separate figures (``series_same_plot``). When split, set
-``"uniform_series_style": true`` so every per-series figure uses the same solid
-line and circle marker instead of cycling styles that would make the separate
-figures look needlessly different.
+share the extension colour and are distinguished by both linestyle and marker
+(so they stay separable even when a single x value makes the linestyle invisible);
+an explicit ``"series_markers"`` mapping overrides the default markers. They can be
+overlaid on one figure or split onto separate figures (``series_same_plot``). When
+split, set ``"uniform_series_style": true`` so every per-series figure uses the
+same solid line and circle marker instead of cycling styles that would make the
+separate figures look needlessly different.
 
 By default every extension is drawn on one shared figure per quantity (one line
 per extension). Set ``"ext_separate_plot": true`` to instead give each extension
-its own figure, with the extension keeping its palette colour across the split
-figures. This affects the value-axis plots -- both the individual per-quantity
-figures and the combined ``plot_together`` subplots figure (which fans out to one
-subplots figure per extension); in ``"x_axis": "extension"`` mode extension is
-already the x-axis.
+its own figure: the per-quantity individual figures split one-per-extension, and
+in this mode the extension and series roles swap -- each cell colours its lines by
+series (the palette extensions usually get) and names the extension in the title
+-- so the figures compare series within each extension. In ``"x_axis":
+"extension"`` mode extension is already the x-axis, so this has no effect.
+
+``plot_together``, ``plot_mega`` and ``plot_overlaid`` are independent opt-ins for
+combined subplot figures (each quantity tiled in a roughly square grid); any
+subset may be enabled.
+
+``"plot_together": true`` emits the *separate* subplot figures: one per extension
+(``_subplots_extN``) when ext_separate_plot is set, else one per series
+(``_subplots_<series>``) when the series are split (``series_same_plot`` false,
+more than one series), else a single combined ``_subplots`` figure overlaying
+everything.
+
+The other two are:
+
+* ``"plot_mega": true`` -- a "mega" grid with one column per quantity and rows
+  splitting whichever dimension is *not* overlaid in the cells. With
+  ext_separate_plot the rows are extensions (cells overlay that extension's
+  series); without it the rows are series (cells overlay that series'
+  extensions). The figure height scales with that row count.
+* ``"plot_overlaid": true`` -- a single row of quantity cells with every
+  extension and series overlaid (the mega grid collapsed into one row). The
+  colour follows ext_separate_plot: on, series share a colour across extensions
+  and extensions differ by line style/marker; off, colour stays per extension and
+  series differ by line style/marker.
 
 Set ``"x_axis": "extension"`` to flip the orientation: extension goes on the
 x-axis, each series becomes its own coloured line, and the independent-variable
@@ -84,6 +107,7 @@ FIT_ALPHA = 0.5
 
 CONFIG_KEYS = {
     "study_name",
+    "suptitle",
     "x_label",
     "x_axis",
     "invert_x",
@@ -102,7 +126,7 @@ CONFIG_KEYS = {
     "show_plots",
     "fit_line",
     "connect_points",
-    "show_actual_values",
+    "show_multiple_values",
     "show_error_bars",
     "error_bar_line",
     "save_output",
@@ -112,6 +136,8 @@ CONFIG_KEYS = {
     "plot_individual",
     "ext_separate_plot",
     "plot_together",
+    "plot_mega",
+    "plot_overlaid",
     "subplots_figsize",
     "subplots_ncols",
 }
@@ -142,6 +168,7 @@ def load_config(config_path):
         raise ValueError(f"Missing required config option(s): {', '.join(missing)}.")
 
     # Defaults.
+    config.setdefault("suptitle", None)
     config.setdefault("x_axis", "value")
     config.setdefault("invert_x", False)
     config.setdefault("series_label", None)
@@ -156,7 +183,7 @@ def load_config(config_path):
     config.setdefault("show_plots", True)
     config.setdefault("fit_line", False)
     config.setdefault("connect_points", None)
-    config.setdefault("show_actual_values", True)
+    config.setdefault("show_multiple_values", True)
     config.setdefault("show_error_bars", False)
     config.setdefault("error_bar_line", True)
     config.setdefault("save_output", True)
@@ -166,6 +193,8 @@ def load_config(config_path):
     config.setdefault("plot_individual", True)
     config.setdefault("ext_separate_plot", False)
     config.setdefault("plot_together", False)
+    config.setdefault("plot_mega", False)
+    config.setdefault("plot_overlaid", False)
     config.setdefault("subplots_figsize", [13, 10])
     config.setdefault("subplots_ncols", None)
 
@@ -396,24 +425,32 @@ def _style_for(series, series_list, series_line_styles, uniform=False):
     return cycle_styles[series]
 
 
-def _marker_for(series, series_list, single_x, series_markers=None, uniform=False):
-    """Resolve a series' marker from a dict mapping or a default.
+def _marker_for(series, series_list, series_markers=None, uniform=False):
+    """Resolve a series' marker from a dict mapping or a cycled default.
 
     An explicit ``series_markers`` mapping always wins: a series named there gets
-    its configured marker on every figure. Otherwise markers only differ between
-    series when there is a single x value (each line is then a lone point and the
-    linestyle is invisible, so the marker is the only distinguisher); with several
-    x values every line uses the default round marker and series are told apart by
-    linestyle. With ``uniform`` set, every series gets the default marker.
+    its configured marker on every figure. Otherwise each series is given its own
+    marker from the default set (so series are distinguished by marker as well as
+    by linestyle). With ``uniform`` set, every series gets the default round marker.
     """
     if uniform or series is None:
         return "o"
     if isinstance(series_markers, dict) and series in series_markers:
         return series_markers[series]
-    if not single_x:
-        return "o"
     cycle_markers = dict(zip(series_list, cycle(DEFAULT_MARKERS)))
     return cycle_markers[series]
+
+
+def _apply_suptitle(fig, config, extra=None):
+    """Add a figure suptitle from the configured ``suptitle`` and optional ``extra``.
+
+    ``extra`` is a per-figure tag (e.g. the extension on a per-extension figure)
+    appended after the configured suptitle; either alone is used if the other is
+    absent. Called just before the layout pass so tight_layout leaves room for it.
+    """
+    parts = [part for part in (config["suptitle"], extra) if part]
+    if parts:
+        fig.suptitle(" — ".join(parts))
 
 
 def _save_figure(config, column, suffix=""):
@@ -574,7 +611,7 @@ def _draw_spread(ax, xpos, sub, column, color, marker, markersize, config):
         _draw_std_errorbar(ax, xpos, sub[column].to_numpy(dtype=float),
                            _yerr_for(sub, column), color,
                            config["error_bar_line"])
-    if config["show_actual_values"]:
+    if config["show_multiple_values"]:
         _draw_actual_values(ax, xpos, sub, column, color, marker, markersize,
                             config["error_bar_line"])
 
@@ -600,7 +637,8 @@ def _draw_line(ax, sub, column, color, style, label, fit_line, fit, config,
 
 
 def _render_quantity(ax, subset, column, spec, config, fits, series_list,
-                     group_series, legend_fontsize=None, color_extensions=None):
+                     group_series, legend_fontsize=None, color_extensions=None,
+                     ext_separate=False, show_legend=True, ext_in_title=True):
     """Draw one quantity onto an axes.
 
     ``subset`` is the data to plot (the full set, or one series in split mode);
@@ -609,6 +647,12 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
     ``color_extensions``, when given, is the full extension list used for colour
     assignment, so an extension keeps its palette colour even when its figure
     holds only that one extension (``ext_separate_plot``).
+
+    With ``ext_separate`` the axes holds a single extension, so the extension and
+    series roles are swapped: each series is drawn in its own palette colour (the
+    colour scheme normally given to extensions), styled uniformly, and labelled by
+    its series value alone, while the extension is named in the title as
+    ``(EXTn)`` instead of on every legend entry.
     """
     extensions = sorted(subset["ext"].unique())
     color_extensions = color_extensions if color_extensions is not None else extensions
@@ -621,11 +665,27 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
     # it): one colour per ext, uniform style, and a single legend entry per ext.
     suppress = config["suppress_series_plot"]
     fit_lookup = {(f["ext"], f["series"]): f for f in fits if f["quantity"] == column}
-    # A single x value makes the linestyle invisible (each line is a lone point),
-    # so series are distinguished by marker instead.
-    single_x = subset["x"].nunique() <= 1
 
-    for ext in extensions:
+    if ext_separate and extensions:
+        # One extension per axes: colour by series (the dimension being compared)
+        # using the palette extensions normally get, drawn with a uniform style.
+        ext = extensions[0]
+        palette = (config["colors"] if isinstance(config["colors"], list)
+                   and config["colors"] else DEFAULT_PALETTE)
+        for idx, series in enumerate(series_list if has_series else [None]):
+            sub = subset if series is None else subset[subset["series"] == series]
+            sub = sub.sort_values("x")
+            if sub.empty:
+                continue
+            color = palette[idx % len(palette)]
+            # With no series to distinguish, the single line needs no legend entry
+            # (the extension is already named in the title).
+            label = ("_nolegend_" if series is None
+                     else _series_legend(config, series))
+            _draw_line(ax, sub, column, color, "-", label, fit_line,
+                       fit_lookup.get((ext, series)), config, marker="o",
+                       connect=connect)
+    for ext in extensions if not ext_separate else []:
         ext_rows = subset[subset["ext"] == ext]
         color = _color_for(ext, color_extensions, config["colors"])
         if overlay:
@@ -641,10 +701,8 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
                     labeled = True
                 else:
                     style = _style_for(series, series_list, config["series_line_styles"])
-                    marker = _marker_for(series, series_list, single_x,
-                                         config["series_markers"])
-                    tag = _series_tag(config["series_label"] or "series", series)
-                    label = f"EXT{ext} ({tag})"
+                    marker = _marker_for(series, series_list, config["series_markers"])
+                    label = f"EXT{ext} ({_series_legend(config, series)})"
                 _draw_line(ax, sub, column, color, style, label,
                            fit_line, fit_lookup.get((ext, series)), config,
                            marker=marker, connect=connect)
@@ -657,8 +715,8 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
             uniform = config["uniform_series_style"] or suppress
             style = _style_for(series, series_list, config["series_line_styles"],
                                uniform=uniform)
-            marker = _marker_for(series, series_list, single_x,
-                                 config["series_markers"], uniform=uniform)
+            marker = _marker_for(series, series_list, config["series_markers"],
+                                 uniform=uniform)
             _draw_line(ax, sub, column, color, style, f"EXT{ext}",
                        fit_line, fit_lookup.get((ext, series)), config,
                        marker=marker, connect=connect)
@@ -668,7 +726,17 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
     # Without a series_label there's no name to attach, so just show the bare
     # series value in parentheses (e.g. "Gain vs VR (Standard)").
     title = spec.get("title", f"{column} vs {config['study_name']}")
-    if not overlay:
+    if ext_separate and extensions and ext_in_title:
+        # The single extension goes in the title; series are named in the legend,
+        # unless this axes holds just one of several series (a series-split row),
+        # in which case name that series in the title too. (When ext_in_title is
+        # false the extension is shown in the figure suptitle instead.)
+        parts = [f"EXT{extensions[0]}"]
+        present = [s for s in subset["series"].dropna().unique()]
+        if multi_series and len(present) == 1:
+            parts.append(_series_legend(config, present[0]))
+        title = f"{title} ({', '.join(parts)})"
+    elif not ext_separate and not overlay:
         fig_series = group_series if group_series is not None else (
             series_list[0] if has_series else None)
         if fig_series is not None and not suppress:
@@ -676,13 +744,97 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
             tag = _labeled_value(label, fig_series) if label else _series_tag(label, fig_series)
             title = f"{title} ({tag})"
 
+    _finalize_axes(ax, config, spec, column, title, legend_fontsize, show_legend)
+
+
+def _finalize_axes(ax, config, spec, column, title, legend_fontsize=None,
+                   show_legend=True):
+    """Apply the shared x-axis-value axes dressing (labels, title, legend, grid).
+
+    ``show_legend`` is set false for subplot cells, where a single figure-level
+    legend is drawn to the left of the grid instead of one legend per cell.
+    """
     if config["invert_x"]:
         ax.invert_xaxis()
     ax.set_xlabel(config["x_label"])
     ax.set_ylabel(spec.get("ylabel", column))
     ax.set_title(title)
-    ax.legend(fontsize=legend_fontsize)
+    if show_legend and ax.get_legend_handles_labels()[0]:
+        ax.legend(fontsize=legend_fontsize)
     ax.grid(True, alpha=0.3)
+
+
+# Fraction of the figure width reserved on the left for the shared subplot legend.
+SUBPLOT_LEGEND_LEFT = 0.15
+
+
+def _shared_left_legend(fig, axes, legend_fontsize=None):
+    """Draw one deduplicated figure legend to the left of a subplot grid.
+
+    Handles and labels are gathered from every cell (so each distinct series /
+    extension entry appears once) and placed in a single legend centred on the
+    figure's left edge; callers reserve ``SUBPLOT_LEGEND_LEFT`` of the width for it.
+    Returns True when a legend was drawn (there were labelled artists), so callers
+    only reserve the strip when something fills it.
+    """
+    handles, labels, seen = [], [], set()
+    for ax in axes:
+        for handle, label in zip(*ax.get_legend_handles_labels()):
+            if label and label != "_nolegend_" and label not in seen:
+                seen.add(label)
+                handles.append(handle)
+                labels.append(label)
+    if handles:
+        fig.legend(handles, labels, loc="center left",
+                   bbox_to_anchor=(0.005, 0.5), fontsize=legend_fontsize)
+    return bool(handles)
+
+
+def _render_overlay_cell(ax, subset, column, spec, config, fits, series_list,
+                         color_by_series, legend_fontsize=None, show_legend=True):
+    """Overlay every (extension, series) line in one cell.
+
+    One dimension is encoded as colour, the other as line style / marker. With
+    ``color_by_series`` (the ext_separate view collapsed into a single row) a
+    series keeps one colour across extensions and extensions are told apart by
+    style/marker; with it false the usual scheme applies -- colour per extension,
+    series told apart by style/marker. Every line is labelled ``EXTn (series)``.
+    """
+    extensions = sorted(subset["ext"].unique())
+    plot_series = series_list if series_list else [None]
+    fit_line = _fit_enabled(spec, config)
+    connect = _connect_points(spec, config, fit_line)
+    fit_lookup = {(f["ext"], f["series"]): f for f in fits if f["quantity"] == column}
+    palette = (config["colors"] if isinstance(config["colors"], list)
+               and config["colors"] else DEFAULT_PALETTE)
+
+    for ext_idx, ext in enumerate(extensions):
+        for ser_idx, series in enumerate(plot_series):
+            sub = subset[subset["ext"] == ext]
+            if series is not None:
+                sub = sub[sub["series"] == series]
+            sub = sub.sort_values("x")
+            if sub.empty:
+                continue
+            if color_by_series:
+                # Colour carries the series; extensions differ by style/marker.
+                color = palette[ser_idx % len(palette)]
+                style = _style_for(ext, extensions, None)
+                marker = _marker_for(ext, extensions, None)
+            else:
+                color = _color_for(ext, extensions, config["colors"])
+                style = _style_for(series, series_list, config["series_line_styles"])
+                marker = _marker_for(series, series_list, config["series_markers"])
+            if series is None:
+                label = f"EXT{ext}"
+            else:
+                label = f"EXT{ext} ({_series_legend(config, series)})"
+            _draw_line(ax, sub, column, color, style, label, fit_line,
+                       fit_lookup.get((ext, series)), config, marker=marker,
+                       connect=connect)
+
+    title = spec.get("title", f"{column} vs {config['study_name']}")
+    _finalize_axes(ax, config, spec, column, title, legend_fontsize, show_legend)
 
 
 def plot_quantity(data, column, spec, config, fits):
@@ -711,7 +863,9 @@ def plot_quantity(data, column, spec, config, fits):
         for fig_subset, file_suffix, color_exts in figures:
             fig, ax = plt.subplots(figsize=config["individual_figsize"])
             _render_quantity(ax, fig_subset, column, spec, config, fits,
-                             series_list, group_series, color_extensions=color_exts)
+                             series_list, group_series, color_extensions=color_exts,
+                             ext_separate=config["ext_separate_plot"])
+            _apply_suptitle(fig, config)
             fig.tight_layout()
             saved.append(_save_figure(config, column, file_suffix))
             _finish_figure(fig, config)
@@ -719,48 +873,153 @@ def plot_quantity(data, column, spec, config, fits):
     return saved
 
 
-def plot_all_together(data, config, fits):
-    """Plot every quantity as subplots in one figure. Returns the saved paths.
+def _save_subplots(fig, config, suffix, legend_axes=None, legend_fontsize="small",
+                   suptitle_extra=None):
+    """Save a subplots figure as ``<study>_subplots<suffix>.jpeg`` (or nothing).
 
-    With ext_separate_plot each extension gets its own subplots figure (one
-    quantity per cell, that single extension's line, keeping its palette colour);
-    otherwise all extensions are overlaid in each cell as before.
+    When ``legend_axes`` is given, one shared legend is drawn to the left of the
+    grid (instead of per-cell legends) and that strip of width is reserved for it.
+    ``suptitle_extra`` adds a per-figure tag (e.g. the extension) to the suptitle.
     """
-    series_list = [s for s in data["series"].dropna().unique()]
-    quantities = list(config["quantities"].items())
+    _apply_suptitle(fig, config, suptitle_extra)
+    if legend_axes is not None and _shared_left_legend(fig, legend_axes, legend_fontsize):
+        fig.tight_layout(rect=(SUBPLOT_LEGEND_LEFT, 0, 1, 1))
+    else:
+        fig.tight_layout()
+    out_path = None
+    if config["save_output"]:
+        out_path = (Path(config["output_dir"])
+                    / f"{config['study_name']}_subplots{suffix}.jpeg")
+        fig.savefig(out_path, dpi=config["dpi"])
+    _finish_figure(fig, config)
+    return out_path
+
+
+def _tiled_subplots(subset, group_series, color_exts, ext_separate, suffix,
+                    config, fits, series_list, quantities, suptitle_extra=None):
+    """Tile the quantities in one roughly square subplots figure and save it.
+
+    Each cell is one quantity drawn from ``subset`` (a single extension when
+    ``ext_separate``, a single series when ``group_series`` is set, or everything);
+    a single shared legend is drawn to the left. For a per-extension figure the
+    extension is named once in the figure suptitle (``suptitle_extra``) rather than
+    repeated in every cell title.
+    """
     n = len(quantities)
     # Default to a roughly square grid so cells stay large (e.g. 3 -> 2x2).
     ncols = config["subplots_ncols"] or int(np.ceil(np.sqrt(n)))
     nrows = -(-n // ncols)  # ceil
     figsize = config["subplots_figsize"] or [6.5 * ncols, 5.5 * nrows]
+    fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
+    flat_axes = axes.flatten()
+    for ax, (column, spec) in zip(flat_axes, quantities):
+        _render_quantity(ax, subset, column, spec, config, fits, series_list,
+                         group_series, legend_fontsize="small",
+                         color_extensions=color_exts, ext_separate=ext_separate,
+                         show_legend=False, ext_in_title=not ext_separate)
+    for ax in flat_axes[n:]:
+        ax.set_visible(False)
+    return _save_subplots(fig, config, suffix, legend_axes=list(flat_axes[:n]),
+                          suptitle_extra=suptitle_extra)
 
+
+def plot_all_together(data, config, fits):
+    """Plot the per-extension / per-series subplot figures. Returns saved paths.
+
+    ``plot_together`` is the master switch for the combined subplot figures. With
+    ext_separate_plot set, one figure is produced per extension (``_subplots_extN``,
+    each tiling the quantities for that extension with its series overlaid). Else,
+    when the series are split (``series_same_plot`` false, more than one series),
+    one figure is produced per series (``_subplots_<series>``, extensions overlaid).
+    Otherwise a single combined figure (``_subplots``) overlays everything.
+    """
+    series_list = [s for s in data["series"].dropna().unique()]
+    quantities = list(config["quantities"].items())
+    extensions = sorted(data["ext"].unique())
+    series_split = (len(series_list) > 1 and not config["series_same_plot"]
+                    and not config["suppress_series_plot"])
+
+    # Each group is (subset, group_series, colour-extension list, ext_separate,
+    # suffix, suptitle_extra); a per-extension figure names its extension in the
+    # suptitle instead of in every cell title.
     if config["ext_separate_plot"]:
-        all_exts = sorted(data["ext"].unique())
-        groups = [(data[data["ext"] == e], f"_ext{e}", all_exts) for e in all_exts]
+        groups = [(data[data["ext"] == e], None, extensions, True, f"_ext{e}", f"EXT{e}")
+                  for e in extensions]
+    elif series_split:
+        groups = [(data[data["series"] == s], s, None, False, f"_{s}", None)
+                  for s in series_list]
     else:
-        groups = [(data, "", None)]
+        groups = [(data, None, None, False, "", None)]
 
-    saved = []
-    for subset, suffix, color_exts in groups:
-        fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
-        flat_axes = axes.flatten()
-        for ax, (column, spec) in zip(flat_axes, quantities):
-            # Subplots overlay series in each cell (one cell per quantity); shrink the
-            # legend so it doesn't crowd out the data at subplot scale.
-            _render_quantity(ax, subset, column, spec, config, fits, series_list, None,
-                             legend_fontsize="small", color_extensions=color_exts)
-        for ax in flat_axes[n:]:
-            ax.set_visible(False)
+    return [_tiled_subplots(subset, gs, ce, es, sfx, config, fits, series_list,
+                            quantities, suptitle_extra=extra)
+            for subset, gs, ce, es, sfx, extra in groups]
 
-        fig.tight_layout()
-        out_path = None
-        if config["save_output"]:
-            out_path = (Path(config["output_dir"])
-                        / f"{config['study_name']}_subplots{suffix}.jpeg")
-            fig.savefig(out_path, dpi=config["dpi"])
-        saved.append(out_path)
-        _finish_figure(fig, config)
-    return saved
+
+def plot_mega(data, config, fits):
+    """Plot every quantity as a "mega" subplots grid. Returns the saved path.
+
+    One column per quantity; the rows split whichever dimension is *not* overlaid
+    inside the cells. With ext_separate_plot the rows are extensions (each cell
+    overlays that extension's series, colour per series); without it the rows are
+    series (each cell overlays that series' extensions, colour per extension). So
+    the row count is the number of extensions or the number of series -- never the
+    product.
+    """
+    series_list = [s for s in data["series"].dropna().unique()]
+    quantities = list(config["quantities"].items())
+    extensions = sorted(data["ext"].unique())
+    ext_separate = config["ext_separate_plot"]
+    # Row keys are extensions (ext_separate) or series (otherwise); a study with no
+    # series falls back to a single row holding all extensions.
+    rows = extensions if ext_separate else (series_list or [None])
+
+    nrows, ncols = len(rows), len(quantities)
+    # Width and per-row height follow subplots_figsize (the height is taken as the
+    # height of a single row, as in the overlay); the total height then scales with
+    # the row count so cells keep their size as rows are added.
+    width, per_row = (config["subplots_figsize"] if config["subplots_figsize"]
+                      else [6.5 * ncols, 4.5])
+    figsize = [width, per_row * nrows]
+    fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
+    for r, key in enumerate(rows):
+        if ext_separate:
+            row_data, group_series = data[data["ext"] == key], None
+        else:
+            row_data = data if key is None else data[data["series"] == key]
+            group_series = key
+        for c, (column, spec) in enumerate(quantities):
+            _render_quantity(axes[r][c], row_data, column, spec, config, fits,
+                             series_list, group_series, legend_fontsize="small",
+                             color_extensions=extensions, ext_separate=ext_separate,
+                             show_legend=False)
+    # The mega figure is large, so give its shared legend a bigger font than the
+    # other subplot figures' default "small".
+    return _save_subplots(fig, config, "_mega", legend_axes=list(axes.flatten()),
+                          legend_fontsize="large")
+
+
+def plot_overlaid(data, config, fits):
+    """Plot one row of quantity cells with every extension and series overlaid.
+
+    This is the mega grid collapsed into a single row. The dimension differentiated
+    by colour follows ext_separate_plot: with it on, a series keeps one colour
+    across extensions and extensions differ by line style/marker; with it off,
+    colour stays per extension and series differ by line style/marker.
+    """
+    series_list = [s for s in data["series"].dropna().unique()]
+    quantities = list(config["quantities"].items())
+    ncols = len(quantities)
+    # A single row: width and height both follow the configured subplots_figsize
+    # (falling back to a per-column width and a one-row height).
+    figsize = config["subplots_figsize"] or [6.5 * ncols, 5.5]
+    fig, axes = plt.subplots(1, ncols, figsize=figsize, squeeze=False)
+    color_by_series = config["ext_separate_plot"]
+    for ax, (column, spec) in zip(axes[0], quantities):
+        _render_overlay_cell(ax, data, column, spec, config, fits, series_list,
+                             color_by_series, legend_fontsize="small",
+                             show_legend=False)
+    return _save_subplots(fig, config, "_overlaid", legend_axes=list(axes[0]))
 
 
 def _series_tag(label, value):
@@ -802,8 +1061,18 @@ def _labeled_value(label, value):
     return f"{label} = {value}"
 
 
+def _series_legend(config, series):
+    """Series text for a legend entry.
+
+    With a ``series_label`` set, the series name is spelled out alongside its value
+    (e.g. ``"VR = -8V"``); without one, just the bare value (with any unit) is used.
+    """
+    label = config["series_label"]
+    return _labeled_value(label, series) if label else _series_tag(None, series)
+
+
 def _render_quantity_vs_ext(ax, subset, column, spec, config, x_value,
-                            series_list, legend_fontsize=None):
+                            series_list, legend_fontsize=None, show_legend=True):
     """Draw one quantity with extension on the x-axis at a fixed x value.
 
     Here the roles are flipped relative to ``_render_quantity``: extension is the
@@ -823,7 +1092,8 @@ def _render_quantity_vs_ext(ax, subset, column, spec, config, x_value,
             continue
         color = palette[idx % len(palette)]
         marker = DEFAULT_MARKERS[idx % len(DEFAULT_MARKERS)] if series is not None else "o"
-        label = str(series) if series is not None else spec.get("ylabel", column)
+        label = (_series_legend(config, series) if series is not None
+                 else spec.get("ylabel", column))
         xpos = sub["ext"].to_numpy(dtype=float)
         line, = ax.plot(xpos, sub[column].to_numpy(dtype=float), marker=marker,
                         linestyle="none", color=color, label=label)
@@ -834,7 +1104,8 @@ def _render_quantity_vs_ext(ax, subset, column, spec, config, x_value,
     ax.set_xlabel("Extension")
     ax.set_ylabel(spec.get("ylabel", column))
     ax.set_xticks(sorted(subset["ext"].unique()))
-    ax.legend(fontsize=legend_fontsize)
+    if show_legend:
+        ax.legend(fontsize=legend_fontsize)
     ax.grid(True, alpha=0.3)
 
 
@@ -850,6 +1121,7 @@ def plot_quantity_vs_ext(data, column, spec, config):
         subset = data[data["x"] == x_value]
         fig, ax = plt.subplots(figsize=config["individual_figsize"])
         _render_quantity_vs_ext(ax, subset, column, spec, config, x_value, series_list)
+        _apply_suptitle(fig, config)
         fig.tight_layout()
         if config["save_output"]:
             suffix = f"_x{x_value:g}" if multi_x else ""
@@ -881,10 +1153,15 @@ def plot_all_together_vs_ext(data, config):
         flat_axes = axes.flatten()
         for ax, (column, spec) in zip(flat_axes, quantities):
             _render_quantity_vs_ext(ax, subset, column, spec, config, x_value,
-                                    series_list, legend_fontsize="small")
+                                    series_list, legend_fontsize="small",
+                                    show_legend=False)
         for ax in flat_axes[n:]:
             ax.set_visible(False)
-        fig.tight_layout()
+        _apply_suptitle(fig, config)
+        if _shared_left_legend(fig, list(flat_axes[:n]), "small"):
+            fig.tight_layout(rect=(SUBPLOT_LEGEND_LEFT, 0, 1, 1))
+        else:
+            fig.tight_layout()
         if config["save_output"]:
             suffix = f"_x{x_value:g}" if multi_x else ""
             out_path = (Path(config["output_dir"])
@@ -984,12 +1261,24 @@ def run_study(config):
                 if path:
                     print(f"Saved {path}")
 
+    # plot_together, plot_mega and plot_overlaid are independent opt-ins; the mega
+    # grid and single-row overlay aren't meaningful in the extension-on-x-axis view.
     if config["plot_together"]:
         paths = (plot_all_together_vs_ext(data, config) if vs_extension
                  else plot_all_together(plot_data, config, plot_fits))
         for path in paths:
             if path:
                 print(f"Saved {path}")
+
+    if config["plot_mega"] and not vs_extension:
+        path = plot_mega(plot_data, config, plot_fits)
+        if path:
+            print(f"Saved {path}")
+
+    if config["plot_overlaid"] and not vs_extension:
+        path = plot_overlaid(plot_data, config, plot_fits)
+        if path:
+            print(f"Saved {path}")
 
     if config["save_output"] and config["save_report"]:
         print(f"Saved {write_report(config, table_str, fits)}")
