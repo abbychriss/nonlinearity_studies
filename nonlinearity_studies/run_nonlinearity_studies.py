@@ -40,6 +40,7 @@ from pedestal_subtract.core import (
     overscan_cols_from_header,
     get_fits_header,
     _scalar_for_extension,
+    plot_charge_per_column,
 )
 from pedestal_subtract.__main__ import (
     OVERSCAN_COLS,
@@ -146,6 +147,8 @@ def _wildcard_free_base(pattern_str):
 CONFIG_KEYS = {
     'file_string',
     'stitch_fits',
+    'plot_charge_per_column',
+    'plot_charge_per_column_figsize',
     'plot_zero_one_adu',
     'get_nonlinearity_at',
     'resolution_at',
@@ -215,6 +218,10 @@ CONFIG_KEYS = {
     'plot_nonlinearity_together',
     'plot_zero_one_electrons',
     'plot_zero_one_yscale',
+    'plot_zero_one_xlim',
+    'plot_zero_one_ylim',
+    'plot_zero_one_ylim_electrons',
+    'electron_fit_mode',
     'show_titles',
     'plot_zero_one_sharex',
     'plot_all_peaks_sharex',
@@ -426,6 +433,7 @@ def main(args=None):
 
     # Get values from argparse arguments
     do_stitch_images = args.stitch_fits
+    do_plot_charge_per_column = args.plot_charge_per_column
     do_plot_zero_one_peaks = args.plot_zero_one_adu or args.plot_zero_one_electrons
     do_plot_all_peaks = args.plot_all_peaks_individual or args.plot_all_peaks_together
     get_nonlinearity_at_charges = args.get_nonlinearity_at
@@ -522,6 +530,11 @@ def main(args=None):
     # Load data from FITS file
     data_ext = get_fits(fits_path)
 
+    # Charge per column is a RAW-data diagnostic (median charge per column before pedestal
+    # subtraction reveals anomalous columns); keep this reference since pedestal subtraction
+    # and the fit-column restriction below both rebind data_ext.
+    raw_data_ext = data_ext
+
     # Resolve the per-extension fit-column slice up front (before pedestal subtraction,
     # which rebinds data_ext), so it is available to the fit-column restriction below.
     fit_cols_ext = _normalize_fit_cols(args.fit_cols, len(data_ext))
@@ -595,6 +608,23 @@ def main(args=None):
         nimages = 1
     if args.nimages is not None:
         nimages = args.nimages
+
+    if do_plot_charge_per_column:
+        plot_charge_per_column(
+            raw_data_ext,
+            n_std_to_mask=args.n_std_to_mask,
+            fit_cols_ext=fit_cols_ext,
+            figsize=tuple(args.plot_charge_per_column_figsize),
+            additional_title=args.extra_plot_title,
+            show_titles=args.show_titles,
+            nimages=nimages,
+            verbose=verbose,
+            save_plots=save_plots,
+            show_plots=args.show_plots,
+            fig_path=str(fig_path),
+            file=image_name,
+            dpi=350,
+        )
 
     if verbose and args.zero_one_gain_guess is not None:
         # Show the per-extension gain seeds actually applied (resolved with the same
@@ -776,8 +806,10 @@ def main(args=None):
                             zero_one_ranges,
                             individual_figsize=tuple(args.plot_zero_one_individual_figsize),
                             subplots_figsize=tuple(args.plot_zero_one_subplots_figsize),
-                            xlim='default',
-                            ylim='default',
+                            xlim=args.plot_zero_one_xlim,
+                            ylim=args.plot_zero_one_ylim,
+                            ylim_electrons=args.plot_zero_one_ylim_electrons,
+                            electron_fit_mode=args.electron_fit_mode or 'transform',
                             additional_title=f'{args.extra_plot_title}' if args.extra_plot_title else '',
                             suptitle='Double-Gaussian Fit to Zero-One Electron Peaks',
                             nimages=nimages,
@@ -903,6 +935,15 @@ You can enable any combination of steps using flags below.""",
                        help="Stitch FITS files by extension")
     parser.add_argument("--no-stitch_fits", dest="stitch_fits", action="store_false",
                        help="Disable FITS stitching when enabled by JSON config")
+    parser.add_argument("--plot_charge_per_column", action="store_true",
+                       default=_config_default(config, 'plot_charge_per_column', False),
+                       help="Plot the median charge per column for each extension (2x2 grid) on the "
+                            "raw, pre-pedestal-subtraction data -- a diagnostic for anomalous columns. "
+                            "A column whose median is >= --n_std_to_mask biweight-SDs from the "
+                            "extension's biweight location is flagged red. Columns excluded by "
+                            "--fit_cols are shaded light grey.")
+    parser.add_argument("--no-plot_charge_per_column", dest="plot_charge_per_column", action="store_false",
+                       help="Disable the charge-per-column plot when enabled by JSON config")
     parser.add_argument("-z", "--plot_zero_one_adu", action="store_true",
                        default=_config_default(config, 'plot_zero_one_adu', False),
                        help="Plot fits to zero/one electron peaks in ADU. Combined with --plot_zero_one_electrons to also (or only) produce the electron-units version.")
@@ -1127,6 +1168,10 @@ You can enable any combination of steps using flags below.""",
                         default=_config_default(config, 'plot_zero_one_subplots_figsize', [13, 9]),
                         metavar=('W', 'H'),
                         help="Figure size (width height) for combined 2x2 zero/one peak subplot")
+    parser.add_argument("--plot_charge_per_column_figsize", nargs=2, type=float,
+                        default=_config_default(config, 'plot_charge_per_column_figsize', [13, 9]),
+                        metavar=('W', 'H'),
+                        help="Figure size (width height) for the charge-per-column plot")
     parser.add_argument("--plot_all_peaks_xlim", nargs='+', type=_lim_token,
                         default=_config_default(config, 'plot_all_peaks_xlim', None),
                         metavar='VAL',
@@ -1200,6 +1245,28 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("--plot_zero_one_yscale", type=str,
                         default=_config_default(config, 'plot_zero_one_yscale', 'linear'),
                         help="Y-axis scale for zero/one peak plots. Options: 'linear', 'log'")
+    # argparse runs `type` over string defaults, which would choke on the 'default'
+    # / 'none' keywords, so default to None here and fall back to the config below.
+    parser.add_argument("--plot_zero_one_xlim", nargs=2, type=float, default=None,
+                        metavar=('LOW', 'HIGH'),
+                        help="X-axis limits for the zero/one peak plots. "
+                             "Omit (or set 'default') to use the fit range; 'none' to autoscale.")
+    parser.add_argument("--plot_zero_one_ylim", nargs=2, type=float, default=None,
+                        metavar=('LOW', 'HIGH'),
+                        help="Y-axis limits for the ADU zero/one peak plots. "
+                             "Omit (or set 'default') for the auto range; 'none' to autoscale.")
+    parser.add_argument("--plot_zero_one_ylim_electrons", nargs=2, type=float, default=None,
+                        metavar=('LOW', 'HIGH'),
+                        help="Y-axis limits for the electron-units zero/one peak plots. Separate from "
+                             "--plot_zero_one_ylim since the electron peaks are taller (smaller sigma). "
+                             "Omit (or set 'default') for the auto range; 'none' to autoscale.")
+    parser.add_argument("--electron_fit_mode", type=str, choices=['transform', 'refit'],
+                        default=_config_default(config, 'electron_fit_mode', None),
+                        help="How to obtain the electron-unit double-Gaussian curve on the zero/one "
+                             "peak plots: 'transform' (default) analytically rescales the converged ADU "
+                             "fit (exact; mu_0=0 / mu_1=1 by construction, no refit); 'refit' fits the "
+                             "double Gaussian again directly to the electron-unit histogram, letting the "
+                             "peaks/widths re-optimise in electron space.")
     parser.add_argument("--show_titles", action="store_true",
                         default=_config_default(config, 'show_titles', True),
                         help="Show suptitles and per-axis titles on all plots")
@@ -1253,6 +1320,21 @@ You can enable any combination of steps using flags below.""",
 
     if parsed_args.file_string is None:
         parser.error('file_string is required unless it is provided in the JSON config')
+
+    # Fall back to the config keyword (or 'default') when no CLI zero/one limits were
+    # given. Kept out of argparse's `type` because the 'default'/'none' string keywords
+    # would fail the float coercion applied to a string default.
+    if parsed_args.plot_zero_one_xlim is None:
+        parsed_args.plot_zero_one_xlim = _config_default(config, 'plot_zero_one_xlim', 'default')
+    if parsed_args.plot_zero_one_ylim is None:
+        parsed_args.plot_zero_one_ylim = _config_default(config, 'plot_zero_one_ylim', 'default')
+    if parsed_args.plot_zero_one_ylim_electrons is None:
+        parsed_args.plot_zero_one_ylim_electrons = _config_default(config, 'plot_zero_one_ylim_electrons', 'default')
+
+    # argparse's `choices` validates CLI strings but not config-supplied defaults, so
+    # re-check electron_fit_mode here to also reject bad values coming from the JSON.
+    if parsed_args.electron_fit_mode not in (None, 'transform', 'refit'):
+        parser.error(f"electron_fit_mode must be 'transform' or 'refit' (got {parsed_args.electron_fit_mode!r})")
 
     # argparse's `type` validates CLI strings but not config-supplied defaults, so
     # re-check the window scales here to also reject values < 1 coming from the JSON.

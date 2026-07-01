@@ -33,7 +33,11 @@
         "gain_adu_per_e": {
             "ylabel": "Gain (ADU/e-)",
             "title": "Gain vs VR",
-            "fit_line": true
+            "fit_line": true,
+            "xscale": "linear",
+            "yscale": "linear",
+            "xlim": null,
+            "ylim": null
         },
         "noise_e": {
             "ylabel": "Noise (e-)",

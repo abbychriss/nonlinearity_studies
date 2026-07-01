@@ -638,7 +638,8 @@ def _draw_line(ax, sub, column, color, style, label, fit_line, fit, config,
 
 def _render_quantity(ax, subset, column, spec, config, fits, series_list,
                      group_series, legend_fontsize=None, color_extensions=None,
-                     ext_separate=False, show_legend=True, ext_in_title=True):
+                     ext_separate=False, show_legend=True, ext_in_title=True,
+                     series_in_title=True):
     """Draw one quantity onto an axes.
 
     ``subset`` is the data to plot (the full set, or one series in split mode);
@@ -736,15 +737,34 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
         if multi_series and len(present) == 1:
             parts.append(_series_legend(config, present[0]))
         title = f"{title} ({', '.join(parts)})"
-    elif not ext_separate and not overlay:
+    elif not ext_separate and not overlay and series_in_title:
+        # The single series on the axes is named in the title (when series_in_title;
+        # a per-series split figure names it in the figure suptitle instead).
         fig_series = group_series if group_series is not None else (
             series_list[0] if has_series else None)
         if fig_series is not None and not suppress:
-            label = config["series_label"]
-            tag = _labeled_value(label, fig_series) if label else _series_tag(label, fig_series)
-            title = f"{title} ({tag})"
+            title = f"{title} ({_series_legend(config, fig_series)})"
 
     _finalize_axes(ax, config, spec, column, title, legend_fontsize, show_legend)
+
+
+def _apply_scales(ax, spec):
+    """Apply per-quantity axis scales and limits from the quantity spec.
+
+    A quantity may set ``"xscale"``/``"yscale"`` to any matplotlib scale name
+    (``"linear"``, ``"log"``, ``"symlog"``, ...); absent keys leave the default
+    linear scale untouched. It may also set ``"xlim"``/``"ylim"`` to a
+    ``[min, max]`` pair to fix that axis range; either entry may be ``null`` to
+    leave that side autoscaled (e.g. ``[0, null]`` pins the bottom only).
+    """
+    if spec.get("xscale"):
+        ax.set_xscale(spec["xscale"])
+    if spec.get("yscale"):
+        ax.set_yscale(spec["yscale"])
+    if spec.get("xlim"):
+        ax.set_xlim(spec["xlim"])
+    if spec.get("ylim"):
+        ax.set_ylim(spec["ylim"])
 
 
 def _finalize_axes(ax, config, spec, column, title, legend_fontsize=None,
@@ -758,6 +778,7 @@ def _finalize_axes(ax, config, spec, column, title, legend_fontsize=None,
         ax.invert_xaxis()
     ax.set_xlabel(config["x_label"])
     ax.set_ylabel(spec.get("ylabel", column))
+    _apply_scales(ax, spec)
     ax.set_title(title)
     if show_legend and ax.get_legend_handles_labels()[0]:
         ax.legend(fontsize=legend_fontsize)
@@ -766,6 +787,9 @@ def _finalize_axes(ax, config, spec, column, title, legend_fontsize=None,
 
 # Fraction of the figure width reserved on the left for the shared subplot legend.
 SUBPLOT_LEGEND_LEFT = 0.15
+# Font size of the single shared legend on every subplot figure (together, mega,
+# overlaid, vs-ext) -- one knob so they always match.
+SUBPLOT_LEGEND_FONTSIZE = "large"
 
 
 def _shared_left_legend(fig, axes, legend_fontsize=None):
@@ -785,8 +809,11 @@ def _shared_left_legend(fig, axes, legend_fontsize=None):
                 handles.append(handle)
                 labels.append(label)
     if handles:
-        fig.legend(handles, labels, loc="center left",
-                   bbox_to_anchor=(0.005, 0.5), fontsize=legend_fontsize)
+        # Right-align the legend within the reserved left strip so it sits flush
+        # against the subplots instead of floating at the far left figure edge.
+        fig.legend(handles, labels, loc="center right",
+                   bbox_to_anchor=(SUBPLOT_LEGEND_LEFT, 0.5),
+                   fontsize=legend_fontsize)
     return bool(handles)
 
 
@@ -873,8 +900,8 @@ def plot_quantity(data, column, spec, config, fits):
     return saved
 
 
-def _save_subplots(fig, config, suffix, legend_axes=None, legend_fontsize="small",
-                   suptitle_extra=None):
+def _save_subplots(fig, config, suffix, legend_axes=None,
+                   legend_fontsize=SUBPLOT_LEGEND_FONTSIZE, suptitle_extra=None):
     """Save a subplots figure as ``<study>_subplots<suffix>.jpeg`` (or nothing).
 
     When ``legend_axes`` is given, one shared legend is drawn to the left of the
@@ -912,11 +939,15 @@ def _tiled_subplots(subset, group_series, color_exts, ext_separate, suffix,
     figsize = config["subplots_figsize"] or [6.5 * ncols, 5.5 * nrows]
     fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
     flat_axes = axes.flatten()
+    # A per-series split figure (group_series set) names its series in the suptitle,
+    # so keep it out of the cell titles -- mirroring the per-extension figures.
+    series_in_title = group_series is None
     for ax, (column, spec) in zip(flat_axes, quantities):
         _render_quantity(ax, subset, column, spec, config, fits, series_list,
                          group_series, legend_fontsize="small",
                          color_extensions=color_exts, ext_separate=ext_separate,
-                         show_legend=False, ext_in_title=not ext_separate)
+                         show_legend=False, ext_in_title=not ext_separate,
+                         series_in_title=series_in_title)
     for ax in flat_axes[n:]:
         ax.set_visible(False)
     return _save_subplots(fig, config, suffix, legend_axes=list(flat_axes[:n]),
@@ -946,10 +977,16 @@ def plot_all_together(data, config, fits):
         groups = [(data[data["ext"] == e], None, extensions, True, f"_ext{e}", f"EXT{e}")
                   for e in extensions]
     elif series_split:
-        groups = [(data[data["series"] == s], s, None, False, f"_{s}", None)
+        groups = [(data[data["series"] == s], s, None, False, f"_{s}",
+                   _series_legend(config, s))
                   for s in series_list]
     else:
-        groups = [(data, None, None, False, "", None)]
+        # Combined figure: overlay everything. A lone series is pinned in the
+        # suptitle (not repeated in each cell title); several series overlay and are
+        # told apart in the legend.
+        only = series_list[0] if len(series_list) == 1 else None
+        extra = _series_legend(config, only) if only is not None else None
+        groups = [(data, only, None, False, "", extra)]
 
     return [_tiled_subplots(subset, gs, ce, es, sfx, config, fits, series_list,
                             quantities, suptitle_extra=extra)
@@ -993,10 +1030,7 @@ def plot_mega(data, config, fits):
                              series_list, group_series, legend_fontsize="small",
                              color_extensions=extensions, ext_separate=ext_separate,
                              show_legend=False)
-    # The mega figure is large, so give its shared legend a bigger font than the
-    # other subplot figures' default "small".
-    return _save_subplots(fig, config, "_mega", legend_axes=list(axes.flatten()),
-                          legend_fontsize="large")
+    return _save_subplots(fig, config, "_mega", legend_axes=list(axes.flatten()))
 
 
 def plot_overlaid(data, config, fits):
@@ -1103,6 +1137,7 @@ def _render_quantity_vs_ext(ax, subset, column, spec, config, x_value,
     ax.set_title(f"{base_title} ({_labeled_value(config['x_label'], x_value)})")
     ax.set_xlabel("Extension")
     ax.set_ylabel(spec.get("ylabel", column))
+    _apply_scales(ax, spec)
     ax.set_xticks(sorted(subset["ext"].unique()))
     if show_legend:
         ax.legend(fontsize=legend_fontsize)
@@ -1158,7 +1193,7 @@ def plot_all_together_vs_ext(data, config):
         for ax in flat_axes[n:]:
             ax.set_visible(False)
         _apply_suptitle(fig, config)
-        if _shared_left_legend(fig, list(flat_axes[:n]), "small"):
+        if _shared_left_legend(fig, list(flat_axes[:n]), SUBPLOT_LEGEND_FONTSIZE):
             fig.tight_layout(rect=(SUBPLOT_LEGEND_LEFT, 0, 1, 1))
         else:
             fig.tight_layout()

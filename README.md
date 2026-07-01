@@ -240,7 +240,7 @@ Common options (apply to both use cases):
 
 - `study_name`: short name used in output filenames and default titles.
 - `x_label`: axis label for the varied parameter; a `"NAME (UNIT)"` form (e.g. `"VR (V)"`) attaches the unit to values in titles.
-- `quantities`: map of CSV column → spec. Each spec may set `ylabel`, `title`, `title_vs_ext`, `fit_line` and `connect_points` (per-quantity overrides), and `column` (absolute 0-based CSV index, to pull a column regardless of its header name).
+- `quantities`: map of CSV column → spec. Each spec may set `ylabel`, `title`, `title_vs_ext`, `fit_line` and `connect_points` (per-quantity overrides), `xscale`/`yscale` (matplotlib axis scale, e.g. `"linear"` (default) or `"log"`), `xlim`/`ylim` (a `[min, max]` pair fixing that axis range; either entry may be `null` to leave that side autoscaled), and `column` (absolute 0-based CSV index, to pull a column regardless of its header name).
 - `datasets`: list of `{"x": ..., "table": ..., (optional) "series": ..., "exclude_ext": [...]}`. `table` is a glob string or a list of glob strings.
 - `x_axis`: `"value"` (default) plots the varied parameter on the x-axis, one line per extension; `"extension"` flips it so extension is the x-axis, each series a coloured line, and the x value pinned in the title (one figure per distinct x).
 - `invert_x` (default `false`): reverse the x-axis (e.g. high VR → low VR).
@@ -327,6 +327,7 @@ It's easier to control all options using a JSON file instead of changing paramet
   "output_dir": null,
   "show_plots": true,
 
+  "plot_charge_per_column": false,
   "plot_zero_one_adu": true,
   "plot_zero_one_electrons": true,
   "get_nonlinearity_at": 500,
@@ -362,6 +363,10 @@ It's easier to control all options using a JSON file instead of changing paramet
   "plot_zero_one_individual_figsize": [8, 6],
   "plot_zero_one_subplots_figsize": [12, 8],
   "plot_zero_one_yscale": "linear",
+  "plot_zero_one_xlim": "default",
+  "plot_zero_one_ylim": "default",
+  "plot_zero_one_ylim_electrons": "default",
+  "electron_fit_mode": "transform",
   "plot_zero_one_sharex": true,
   "plot_zero_one_sharey": true,
 
@@ -417,6 +422,7 @@ run-nonlinearity-studies -j config/default_nonlinearity.json --no-save_plots
 
 ##### Plotting
 Each plot type is controlled by its `_individual` and `_together` toggles (see [Plot layout](#plot-layout-per-plot-type)) — a plot is generated whenever either is `true`.
+- `--plot_charge_per_column`: Plot the median charge per column for each extension (a single 2×2 grid) on the **raw**, pre-pedestal-subtraction data — a diagnostic for anomalous columns. A column whose median sits ≥ `--n_std_to_mask` biweight-SDs from the extension's biweight location is flagged "hot" (drawn red). Every column is plotted; columns excluded by `--fit_cols` are shaded light grey. `--plot_charge_per_column_figsize W H` sets its figure size (default `13 9`).
 - `-z`, `--plot_zero_one_adu`: Render the zero/one electron peak fits in ADU (units selector for the zero/one plot)
 - `--plot_zero_one_electrons`: Render the zero/one electron peak fits in e- (independent of the ADU flag)
 - `-g`, `--get_nonlinearity_at CHARGE...`: Evaluate the nonlinearity polynomial at one or more charge values
@@ -478,6 +484,8 @@ For `plot_resolution` the two modes differ slightly because there can be several
 
 ##### Plot styling
 - `--plot_zero_one_yscale {linear, log}`
+- `--plot_zero_one_xlim LOW HIGH` / `--plot_zero_one_ylim LOW HIGH` / `--plot_zero_one_ylim_electrons LOW HIGH`: limits for the zero/one peak plots (`ylim` for the ADU version, `ylim_electrons` for the electron-units version, which is separate because the electron peaks are taller). Omit or set `"default"` to use the fit range / auto range; `"none"` to autoscale.
+- `--electron_fit_mode {transform, refit}`: how the electron-unit double-Gaussian curve is drawn on the zero/one plots — `transform` (default) analytically rescales the converged ADU fit; `refit` fits the double Gaussian directly to the electron-unit histogram.
 - `--plot_all_peaks_xlim LEFT RIGHT` / `--plot_all_peaks_ylim BOTTOM TOP`
 - `--plot_all_peaks_yscale {linear, log}`
 - `--plot_nonlinearity_xlim ...` / `--plot_nonlinearity_ylim ...`: 2 values for a shared limit across extensions, or 8 values (`L1 R1 L2 R2 L3 R3 L4 R4`) for per-extension limits

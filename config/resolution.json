@@ -1,6 +1,8 @@
 {
     "file_string": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_scan/deltaV_7/VR-8_VDD-22.5/stitched-fits/cts_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched.fits",
     "stitch_fits": false,
+    "plot_charge_per_column": false,
+    "plot_charge_per_column_figsize": [13, 9],
     "resolution_at": [500, 1000, 1200, 1500],
     "resolution_window": 10,
     "resolution_sigma_well": 0.25,
