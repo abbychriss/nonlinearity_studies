@@ -4,14 +4,29 @@ A Python package for analyzing nonlinearity in CCDs.
 
 ## Overview
 
-- **Image Stitching**: Combine multi-extension FITS images row-wise and run analysis on stitched image
+- **Image Stitching**: Combine multi-extension FITS images row-wise and run analysis on stitched image (via the `analysis_tools` package)
 - **Pedestal Subtraction**: Independently computes and subtracts pedestal along specified axis (using my pedestal_subtract package)
 - **Noise & Gain Calculation**: Determines noise and gain from data and converts to e-
 - **Peak Finder**: Finds all electron peaks in charge distribution
 - **Nonlinearity Computation**: Quantifies nonlinearity as a function of charge by fitting nonlinearity curve to parabola
 - **Single-Electron Resolution**: Quantifies single electron resolution at a given charge *q* by fitting *n* Gaussians in window around *q* and reporting the shared peak width σ (e-), goodness of fit, and a resolved/marginal/unresolved verdict
 - **Visualization**: Plots zero-one electron peaks in ADU and e-, histograms of charge distribution at any q with peak labels, and nonlinearity curves. Can be plotted per extension or together as 2×2 subplot. Control figure sizes, axis sharing, scales, limits, titles, etc. using config.
-- **Meta analysis**: Plot results of nonlinearity analysis (noise, gain, resolution, nonlinearity) as function of image parameter using summary csv tables produced during individual analyses
+- **Meta analysis**: Plot results of nonlinearity analysis (noise, gain, resolution, nonlinearity) as a function of an image parameter using the summary CSV tables produced during individual analyses (now provided by the `analysis_tools` package via the `meta-studies` command)
+
+## Code structure
+
+The analysis library is organized by responsibility rather than as one large module:
+
+- `fit_data.py` — fit models and primitives (parabola, Gaussians, peak finding)
+- `fit_range.py` — automatic estimation of the nonlinearity fit range
+- `nonlinearity.py` — nonlinearity computation per extension / at a given charge
+- `resolution.py` — single-electron resolution fitting and classification
+- `plotting.py` — peak, nonlinearity, and resolution figures
+- `summary.py` — per-extension and wide summary tables (CSV)
+- `run_nonlinearity_studies.py` — command-line interface; `cli_config.py` holds its config/argument helpers
+- `nonlinearity_studies.py` — backwards-compatibility shim that re-exports the public API, so existing `from nonlinearity_studies.nonlinearity_studies import ...` imports keep working
+
+Zero/one-electron peak fitting, pedestal subtraction, and FITS I/O are provided by the `pedestal_subtract` package; FITS stitching and meta-analysis plotting by `analysis_tools`.
 
 ## Installation
 

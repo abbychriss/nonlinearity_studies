@@ -5,10 +5,21 @@ Nonlinearity Studies Package
 A Python package for analyzing nonlinearity in detector charge measurements
 using FITS data and statistical analysis.
 
-Main Modules:
-- nonlinearity_studies: Core analysis functions for nonlinearity studies
-- run_nonlinearity_studies: Command-line interface for running analyses
-- stitch_fits: Utility for stitching multi-extension FITS files
+Analysis library, organized by responsibility:
+- fit_data         : fit models & primitives (parabola, Gaussians, peak finding)
+- fit_range        : automatic estimation of the nonlinearity fit range
+- nonlinearity     : nonlinearity computation per extension / at a charge
+- resolution       : single-electron resolution fitting and classification
+- plotting         : peak, nonlinearity, and resolution figures
+- summary          : per-extension and wide summary tables (CSV)
+
+Other modules:
+- run_nonlinearity_studies : command-line interface for running analyses
+- cli_config               : config loading & argument-normalization helpers
+- nonlinearity_studies     : backwards-compatibility shim re-exporting the above
+
+The zero/one-electron peak fitting, pedestal subtraction, and FITS I/O come from
+the ``pedestal_subtract`` package; FITS stitching from ``analysis_tools``.
 """
 
 __version__ = "0.1.0"
@@ -42,8 +53,8 @@ from .nonlinearity_studies import (
     estimate_fit_range_right_changepoint_ext,
 )
 
-# Import stitch_fits utility
-from .stitch_fits import stitch_fits
+# Import stitch_fits utility (now lives in the shared analysis_tools package)
+from analysis_tools import stitch_fits
 
 __all__ = [
     "convert_to_electrons",
@@ -66,5 +77,9 @@ __all__ = [
     "plot_all_peaks",
     "plot_nonlinearity",
     "plot_resolution",
+    "pedestal_subtract_ext_cached",
+    "estimate_optimal_fit_range_right_ext",
+    "estimate_fit_range_right_by_noise_onset_ext",
+    "estimate_fit_range_right_changepoint_ext",
     "stitch_fits",
 ]
