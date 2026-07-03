@@ -1,0 +1,77 @@
+{
+    "study_name": "VR8_VDD_resolution",
+    "suptitle": null,
+    "x_label": "VDD (V)",
+    "invert_x": true,
+    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/resolution_meta",
+    "series_label": "Charge (e-)",
+    "series_same_plot": false,
+    "suppress_series_plot": false,
+    "uniform_series_style": true,
+    "plot_together": false,
+    "plot_mega": false,
+    "plot_overlaid": false,
+    "x_axis": "value",
+    "colors": null,
+    "dpi": 350,
+    "show_plots": true,
+    "save_output": true,
+    "save_report": true,
+    "use_average": false,
+    "show_multiple_values": true,
+    "show_error_bars": false,
+    "fit_line": false,
+    "connect_points": null,
+    "error_bar_line": true,
+    "plot_individual": true,
+    "ext_separate_plot": false,
+    "subplots_ncols": null,
+    "series_line_styles": null,
+    "series_markers": null,
+    "quantities": {
+        "sigma_e_at_500_e": {
+            "ylabel": "Resolution sigma (e-)",
+            "title": "Resolution sigma at 500 e- vs VDD"
+        },
+        "sigma_e_at_1000_e": {
+            "ylabel": "Resolution sigma (e-)",
+            "title": "Resolution sigma at 1000 e- vs VDD"
+        },
+        "sigma_e_at_1200_e": {
+            "ylabel": "Resolution sigma (e-)",
+            "title": "Resolution sigma at 1200 e- vs VDD"
+        },
+        "reduced_chi2_at_500_e": {
+            "ylabel": "Reduced $\\chi^2$",
+            "title": "Fit reduced $\\chi^2$ at 500 e- vs VDD"
+        },
+        "reduced_chi2_at_1000_e": {
+            "ylabel": "Reduced $\\chi^2$",
+            "title": "Fit reduced $\\chi^2$ at 1000 e- vs VDD"
+        },
+        "reduced_chi2_at_1200_e": {
+            "ylabel": "Reduced $\\chi^2$",
+            "title": "Fit reduced $\\chi^2$ at 1200 e- vs VDD"
+        },
+        "delta_aic_at_500_e": {
+            "ylabel": "$\\Delta$AIC",
+            "title": "$\\Delta$AIC at 500 e- vs VDD"
+        },
+        "delta_aic_at_1000_e": {
+            "ylabel": "$\\Delta$AIC",
+            "title": "$\\Delta$AIC at 1000 e- vs VDD"
+        },
+        "delta_aic_at_1200_e": {
+            "ylabel": "$\\Delta$AIC",
+            "title": "$\\Delta$AIC at 1200 e- vs VDD"
+        }
+    },
+    "datasets": [
+        {"x": -19.0, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-19/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_3552f8dd/extension_summary.csv"},
+        {"x": -20.5, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-20.5/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_93d5c75f/extension_summary.csv"},
+        {"x": -21.5, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-21.5/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_da9899be/extension_summary.csv"}
+    ],
+    "individual_figsize": [9,6.5],
+    "subplots_figsize": [13,10]
+}
+

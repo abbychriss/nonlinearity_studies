@@ -1,0 +1,60 @@
+{
+    "study_name": "deltaV_sigma_VR-8_VDD-22.5",
+    "suptitle": "DeltaV Scan: VR=-8, VDD=-22.5",
+    "x_label": "deltaV = SW$_H$ - SW$_L$ (V)",
+    "invert_x": false,
+    "x_axis": "value",
+    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_scan_VR-8_VDD-22.5/meta_nonlinearity_results",
+    "series_label": "",
+    "series_same_plot": true,
+    "ext_separate_plot": false,
+    "suppress_series_plot": false,
+    "uniform_series_style": false,
+    "plot_individual": true,
+    "plot_together": true,
+    "plot_mega": false,
+    "plot_overlaid": false,
+    "show_plots": true,
+    "save_output": true,
+    "save_report": true,
+    "subplots_ncols": 2,
+    "fit_line": false,
+    "connect_points": true,
+    "individual_figsize": [9,7],
+    "subplots_figsize": [16.5,10],
+    "colors": null,
+    "dpi": 450,
+    "use_average": false,
+    "show_multiple_values": true,
+    "show_error_bars": false,
+    "error_bar_line": true,
+    "series_line_styles": ["", "-"],
+    "series_markers": ["^", "o"],
+    "quantities": {
+        "sigma_e_at_500_e": {
+            "ylabel": "$\\sigma$ (e-)",
+            "title": "$\\sigma$ at 500 e- vs deltaV"
+        },
+        "sigma_e_at_1000_e": {
+            "ylabel": "$\\sigma$ (e-)",
+            "title": "$\\sigma$ at 1000 e- vs deltaV"
+        },
+        "sigma_e_at_1200_e": {
+            "ylabel": "$\\sigma$ (e-)",
+            "title": "$\\sigma$ at 1200 e- vs deltaV"
+        },
+        "sigma_e_at_1500_e": {
+            "ylabel": "$\\sigma$ (e-)",
+            "title": "$\\sigma$ at 1500 e- vs deltaV"
+        }
+    },
+    "datasets": [
+        {"x": 7, "exclude_ext": [], "series": "RG_H inc", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_scan_VR-8_VDD-22.5/deltaV_7/5_images/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_*/extension_summary.csv"},
+        {"x": 8, "exclude_ext": [], "series": "RG_H inc", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_scan_VR-8_VDD-22.5/deltaV_8/5_images/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_*/extension_summary.csv"},
+        {"x": 9, "exclude_ext": [], "series": "RG_H inc", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_scan_VR-8_VDD-22.5/deltaV_9/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_*/extension_summary.csv"},
+        {"x": 10,"exclude_ext": [], "series": "RG_H inc", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_scan_VR-8_VDD-22.5/deltaV_10/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_*/extension_summary.csv"},
+        {"x": 11 , "exclude_ext": [],  "series": "RG_H inc", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_scan_VR-8_VDD-22.5/deltaV_11/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_*/extension_summary.csv"},
+        {"x": 12, "exclude_ext": [], "series": "RG_H inc", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_scan_VR-8_VDD-22.5/deltaV_12/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_*/extension_summary.csv"},
+        {"x": 12, "exclude_ext": [], "series": "RG std", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_scan_VR-8_VDD-22.5/deltaV_12_RG_H_4/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_*/extension_summary.csv"}
+    ]
+}
