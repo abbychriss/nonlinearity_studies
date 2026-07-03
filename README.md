@@ -175,7 +175,7 @@ run-nonlinearity-studies \
 
 With `--save_plots`, the full per-extension estimate (chosen value, cross-check, confidence) is written to `fit_range_estimate.json` in the run's output folder. Add `--verbose` to also print the confidence label per extension and a warning for any that need review.
 
-To quantify single-electron resolution at one or more charges, pass `--resolution_at`. This prints (and, with `--save_csv`, saves) a per-charge/per-extension table of σ, reduced χ², ΔAIC, peak counts, and verdict, and with a plot flag draws the charge distribution in the window with Gaussian fits:
+To quantify single-electron resolution at one or more charges, pass `--resolution_at`. This prints a per-charge/per-extension table of σ, reduced χ², ΔAIC, peak counts, and verdict, and — with `--save_csv` — merges the same quantities into `extension_summary.csv` as `<field>_at_<charge>_e` columns (e.g. `sigma_e_at_500_e`) alongside gain, noise, and nonlinearity, one row per extension. With a plot flag it also draws the charge distribution in the window with Gaussian fits:
 
 ```bash
 run-nonlinearity-studies \
@@ -289,7 +289,7 @@ Series options (how a second dimension is split into separate lines):
 }
 ```
 
-**Use case 2 — `resolution_summary.csv` (split by a column within each table).** Set `series_column` and the series is read from that CSV column instead of a per-dataset tag, so a table with one row per charge `q` becomes one series per charge. `series_column` takes precedence over any `"series"` tag. This pairs naturally with `series_same_plot: false` and `uniform_series_style: true`. See `config/VR8_VDD_resolution_study.json`:
+**Use case 2 — resolution at several charges (one extension_summary.csv, one quantity per charge).** Resolution results are merged into `extension_summary.csv` as `<field>_at_<charge>_e` columns (e.g. `sigma_e_at_500_e`), the same way `nonlinearity_at_<charge>_e` already works, so no `series_column` is needed for this case -- just list one quantity per (field, charge) pair. `plot_mega` then lays them out as a grid (one column per quantity) for an at-a-glance comparison across charges. See `config/VR-8_VDD_resolution_study.json`:
 
 ```json
 {
@@ -297,22 +297,24 @@ Series options (how a second dimension is split into separate lines):
   "x_label": "VDD (V)",
   "invert_x": true,
   "series_label": "Charge (e-)",
-  "series_column": "q",
   "series_same_plot": false,
   "uniform_series_style": true,
   "plot_together": false,
   "quantities": {
-    "sigma_e": {"ylabel": "Resolution sigma (e-)", "title": "Resolution sigma vs VDD"},
-    "reduced_chi2": {"ylabel": "Reduced $\\chi^2$", "title": "Fit reduced $\\chi^2$ vs VDD"},
-    "delta_aic": {"ylabel": "$\\Delta$AIC", "title": "$\\Delta$AIC vs VDD"}
+    "sigma_e_at_500_e": {"ylabel": "Resolution sigma (e-)", "title": "Resolution sigma at 500 e- vs VDD"},
+    "sigma_e_at_1000_e": {"ylabel": "Resolution sigma (e-)", "title": "Resolution sigma at 1000 e- vs VDD"},
+    "sigma_e_at_1200_e": {"ylabel": "Resolution sigma (e-)", "title": "Resolution sigma at 1200 e- vs VDD"},
+    "reduced_chi2_at_500_e": {"ylabel": "Reduced $\\chi^2$", "title": "Fit reduced $\\chi^2$ at 500 e- vs VDD"}
   },
   "datasets": [
-    {"x": -19.0, "table": ".../VR-8_VDD-19/.../resolution_summary.csv"},
-    {"x": -20.5, "table": ".../VR-8_VDD-20.5/.../resolution_summary.csv"},
-    {"x": -21.5, "table": ".../VR-8_VDD-21.5/.../resolution_summary.csv"}
+    {"x": -19.0, "table": ".../VR-8_VDD-19/.../extension_summary.csv"},
+    {"x": -20.5, "table": ".../VR-8_VDD-20.5/.../extension_summary.csv"},
+    {"x": -21.5, "table": ".../VR-8_VDD-21.5/.../extension_summary.csv"}
   ]
 }
 ```
+
+`series_column` (split a table into one series per distinct value of a given CSV column) is still available for tables of your own that vary a second parameter within one file -- it's just no longer how resolution-at-charge tables are read.
 
 ### JSON config
 
@@ -467,7 +469,7 @@ The resolution step runs only when `--resolution_at` is given. For each requeste
 - `--resolution_sigma_limit FLOAT`: σ (e-) at/above which peaks are **unresolved** (no central valley, separation < 2σ). Default `0.5`. Between `sigma_well` and `sigma_limit` the verdict is `marginal`.
 - `--resolution_min_peak_frac FLOAT`: Detected/expected peak fraction below which the window is **unresolved** regardless of σ. Default `0.6`. This catches windows where the peak finder recovered far fewer than the ~`window+1` peaks the window should hold (e.g. 2 of 11) — too smeared to detect, so the under-determined σ is meaningless.
 
-The verdict, σ, reduced χ², ΔAIC, and detected/expected peak counts are printed in a per-charge/per-extension table. With `--save_csv` the same table is written to `resolution_summary.csv` in the run's output folder.
+The verdict, σ, reduced χ², ΔAIC, and detected/expected peak counts are printed in a per-charge/per-extension table. With `--save_csv` the same quantities are pivoted to one row per extension and merged into `extension_summary.csv` in the run's output folder, as `<field>_at_<charge>_e` columns (e.g. `sigma_e_at_500_e`) alongside gain, noise, and nonlinearity.
 
 ##### Plot layout (per plot type)
 For each of `plot_zero_one`, `plot_all_peaks`, `plot_nonlinearity`, `plot_resolution`:
@@ -522,8 +524,9 @@ The cache is **not** automatically invalidated if the source FITS file itself ch
 - `resolution_at_charge(counts, centers, peaks, q, window, gain, s0)`: Single-extension single-electron resolution at charge `q`. Fits a constrained *n*-Gaussian comb (means fixed at the detected peaks, one shared σ, free amplitudes) in `[q - window/2, q + window/2]` and returns a result dict with `sigma_e`, `sigma_e_err`, `reduced_chi2`, `delta_aic`, `n_components`, `expected_peaks`, and the windowed data/fit curves for plotting.
 - `resolution_at_charge_ext(counts_ext, centers_ext, peaks_ext, gains, double_gauss_popts, charges, window=10.0, sigma_well=0.25, sigma_limit=0.5, min_peak_frac=0.6, ...)`: Per-extension resolution at one or more charges. Returns a nested list (per extension, per charge) of result dicts, each augmented with `ext` and a `verdict`.
 - `classify_resolution(res, sigma_well=0.25, sigma_limit=0.5, min_peak_frac=0.6)`: Map a result dict to a three-tier verdict (`well resolved` / `marginal` / `unresolved`) from the fitted σ relative to the 1 e- spacing and the detected/expected peak fraction.
-- `summarize_resolution(results_ext, save_path=None)`: Print the per-charge/per-extension resolution table (σ, reduced χ², ΔAIC, peak counts, verdict); writes it as CSV (`resolution_summary.csv`) when `save_path` is given. (`format_resolution_table(results_ext)` returns the printable table string.)
-- `summarize_extensions(gains, double_gauss_popts, parabola_coeffs, nonlinearity_charges=500, save_path=None)`: Print the per-extension summary table of gain (ADU/e-), noise (e-), and nonlinearity at one or more charges (`nonlinearity_charges` accepts a scalar or list); writes it as CSV when `save_path` is given. Returns the summary rows. (Builders: `build_extension_summary` returns `(rows, charges)` as dicts; `format_extension_summary(rows, charges)` turns them into the printable table string.)
+- `summarize_resolution(results_ext, save_path=None)`: Print the per-charge/per-extension resolution table (σ, reduced χ², ΔAIC, peak counts, verdict); optionally writes that same long-format (one row per (ext, q)) table as CSV when `save_path` is given -- this is a diagnostic/console view, separate from the merged `extension_summary.csv` output. (`format_resolution_table(results_ext)` returns the printable table string.)
+- `build_resolution_summary_wide(results_ext, charges)`: Pivot `resolution_at_charge_ext`'s per-(ext, charge) results to one row per extension, with a `<field>_at_<charge>_e` column per (field, charge) pair (`sigma_e`, `sigma_e_err`, `reduced_chi2`, `delta_aic`, `n_peaks_fit`, `expected_peaks`, `verdict`) -- mirrors `nonlinearity_at_<charge>_e`. Returns `(rows, charges)`.
+- `summarize_extensions(gains, double_gauss_popts, parabola_coeffs, nonlinearity_charges=500, resolution_rows=None, resolution_charges=None, save_path=None)`: Print the per-extension summary table of gain (ADU/e-), noise (e-), nonlinearity at one or more charges (`nonlinearity_charges` accepts a scalar or list), and -- when `resolution_rows`/`resolution_charges` (from `build_resolution_summary_wide`) are given -- the merged resolution columns; writes it as one combined CSV (`extension_summary.csv`) when `save_path` is given. Returns the summary rows. (Builders: `build_extension_summary(..., resolution_rows=None)` returns `(rows, charges)` as dicts; `format_extension_summary(rows, charges, resolution_charges=None)` turns them into the printable table string.)
 
 ### Plotting Functions
 

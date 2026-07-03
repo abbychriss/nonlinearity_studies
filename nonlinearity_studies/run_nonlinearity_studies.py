@@ -67,6 +67,7 @@ if __name__ == "__main__":
         summarize_extensions,
         resolution_at_charge_ext,
         summarize_resolution,
+        build_resolution_summary_wide,
         plot_zero_one_peaks,
         plot_all_peaks,
         plot_nonlinearity,
@@ -87,6 +88,7 @@ else:
         summarize_extensions,
         resolution_at_charge_ext,
         summarize_resolution,
+        build_resolution_summary_wide,
         plot_zero_one_peaks,
         plot_all_peaks,
         plot_nonlinearity,
@@ -401,7 +403,21 @@ def main(args=None):
 
     file_path = Path(args.file_string)
 
-    if not args.stitch_fits and not file_path.exists():
+    if not args.stitch_fits and glob.has_magic(args.file_string):
+        # A glob pattern (e.g. '..._VDD-20p5_*.fz') must be expanded -- otherwise the
+        # literal '*' path never exists and the check below reports "file not found".
+        # The single-file (non-stitch) path analyzes one image, so an ambiguous match
+        # is an error: narrow the pattern or use --stitch_fits to combine the files.
+        matches = sorted(glob.glob(args.file_string))
+        if not matches:
+            print(f'\nError: no file matches the pattern: {args.file_string}\n')
+            sys.exit(1)
+        if len(matches) > 1:
+            print(f'\nError: file_string matched {len(matches)} files; narrow the pattern '
+                  'or use --stitch_fits to combine them:\n  ' + '\n  '.join(matches) + '\n')
+            sys.exit(1)
+        file_path = Path(matches[0])
+    elif not args.stitch_fits and not file_path.exists():
         # The path doesn't exist as typed. Only fall back to a tree-wide search when the
         # user passed a BARE filename (no directory component) -- that is the intended
         # convenience. A path that includes directories (or is absolute) is taken
@@ -743,20 +759,12 @@ def main(args=None):
                                                                                         fit_bounds_low=-100, 
                                                                                         fit_bounds_high=100)
 
-    # Per-extension summary table: gain (ADU/e-), noise (e-), and nonlinearity at the same
-    # charge(s) requested via --get_nonlinearity_at (falling back to 500 e- when none given).
-    summary_charges = get_nonlinearity_at_charges if get_nonlinearity_at_charges is not None else 500
-    summarize_extensions(
-        gains,
-        double_gauss_popts,
-        parabola_coeffs,
-        nonlinearity_charges=summary_charges,
-        save_path=(fig_path / 'extension_summary.csv') if save_csv else None,
-    )
-
     # Single-electron resolution at the requested charge(s): fit a constrained
     # n-Gaussian comb in a window around each q and report sigma (e-), reduced
-    # chi^2, delta-AIC vs a single-Gaussian null, and a 3-tier verdict.
+    # chi^2, delta-AIC vs a single-Gaussian null, and a 3-tier verdict. Computed
+    # before the per-extension summary table below so its results (pivoted to one
+    # row per extension) can be merged into the same extension_summary.csv.
+    resolution_rows, resolution_charges = None, None
     if args.resolution_at is not None:
         resolution_charges = _normalize_scalar_or_list(args.resolution_at)
         resolution_results_ext = resolution_at_charge_ext(
@@ -768,9 +776,12 @@ def main(args=None):
             min_peak_frac=args.resolution_min_peak_frac,
             verbose=verbose,
         )
-        summarize_resolution(
-            resolution_results_ext,
-            save_path=(fig_path / 'resolution_summary.csv') if save_csv else None,
+        # Console table only -- resolution_summary.csv (one row per (ext, q)) is no
+        # longer written; its columns are merged into extension_summary.csv instead
+        # (see build_resolution_summary_wide / summarize_extensions below).
+        summarize_resolution(resolution_results_ext)
+        resolution_rows, resolution_charges = build_resolution_summary_wide(
+            resolution_results_ext, resolution_charges
         )
         if args.plot_resolution_individual or args.plot_resolution_together:
             plot_resolution(
@@ -794,6 +805,22 @@ def main(args=None):
                 file=image_name,
                 dpi=350,
             )
+
+    # Per-extension summary table: gain (ADU/e-), noise (e-), nonlinearity at the same
+    # charge(s) requested via --get_nonlinearity_at (falling back to 500 e- when none given),
+    # and -- when --resolution_at was given -- the resolution columns computed above, merged
+    # in by extension. One combined extension_summary.csv covers everything.
+    summary_charges = get_nonlinearity_at_charges if get_nonlinearity_at_charges is not None else 500
+    summarize_extensions(
+        gains,
+        double_gauss_popts,
+        parabola_coeffs,
+        nonlinearity_charges=summary_charges,
+        resolution_rows=resolution_rows,
+        resolution_charges=resolution_charges,
+        verbose=verbose,
+        save_path=(fig_path / 'extension_summary.csv') if save_csv else None,
+    )
 
     # Fit a double gaussian to zero + 1 electron peak in each extension
     if do_plot_zero_one_peaks:

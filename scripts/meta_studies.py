@@ -76,7 +76,6 @@ import argparse
 import json
 import re
 from glob import glob
-from itertools import cycle
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -325,10 +324,13 @@ def load_datasets(config):
     The series dimension comes from one of two places. Normally it is a per-dataset
     tag (``"series": "-8"``), constant across the whole table. Alternatively, when
     ``"series_column"`` is set in the config, the series is read from that CSV
-    column instead, so a table that varies a second parameter within itself (e.g.
-    ``resolution_summary.csv`` with one row per charge ``q``) is split into one
-    series per distinct value of that column. The two are mutually exclusive;
-    ``series_column`` takes precedence if both are present.
+    column instead, so a table that varies a second parameter within itself (one
+    row per distinct value, e.g. a per-charge sweep) is split into one series per
+    distinct value of that column. The two are mutually exclusive; ``series_column``
+    takes precedence if both are present. (Resolution-at-charge results are no
+    longer read this way -- ``extension_summary.csv`` carries them as
+    ``<field>_at_<charge>_e`` columns instead, one row per extension, the same way
+    ``nonlinearity_at_<charge>_e`` already worked.)
     """
     series_column = config.get("series_column")
     records = []
@@ -411,7 +413,7 @@ def _color_for(ext, extensions, colors):
 
 
 def _style_for(series, series_list, series_line_styles, uniform=False):
-    """Resolve a series' linestyle from a dict mapping or a cycled default.
+    """Resolve a series' linestyle from a dict mapping or a list (cycled).
 
     With ``uniform`` set, every series gets the default solid line; this is for
     split plots (one series per figure), where cycling styles only makes the
@@ -421,24 +423,25 @@ def _style_for(series, series_list, series_line_styles, uniform=False):
         return "-"
     if isinstance(series_line_styles, dict) and series in series_line_styles:
         return series_line_styles[series]
-    cycle_styles = dict(zip(series_list, cycle(DEFAULT_LINESTYLES)))
-    return cycle_styles[series]
+    styles = series_line_styles if series_line_styles else DEFAULT_LINESTYLES
+    return styles[series_list.index(series) % len(styles)]
 
 
 def _marker_for(series, series_list, series_markers=None, uniform=False):
-    """Resolve a series' marker from a dict mapping or a cycled default.
+    """Resolve a series' marker from a dict mapping or a list (cycled default).
 
     An explicit ``series_markers`` mapping always wins: a series named there gets
     its configured marker on every figure. Otherwise each series is given its own
-    marker from the default set (so series are distinguished by marker as well as
-    by linestyle). With ``uniform`` set, every series gets the default round marker.
+    marker from the configured list, or the default set (so series are
+    distinguished by marker as well as by linestyle). With ``uniform`` set, every
+    series gets the default round marker.
     """
     if uniform or series is None:
         return "o"
     if isinstance(series_markers, dict) and series in series_markers:
         return series_markers[series]
-    cycle_markers = dict(zip(series_list, cycle(DEFAULT_MARKERS)))
-    return cycle_markers[series]
+    markers = series_markers if series_markers else DEFAULT_MARKERS
+    return markers[series_list.index(series) % len(markers)]
 
 
 def _apply_suptitle(fig, config, extra=None):
@@ -651,9 +654,10 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
 
     With ``ext_separate`` the axes holds a single extension, so the extension and
     series roles are swapped: each series is drawn in its own palette colour (the
-    colour scheme normally given to extensions), styled uniformly, and labelled by
-    its series value alone, while the extension is named in the title as
-    ``(EXTn)`` instead of on every legend entry.
+    colour scheme normally given to extensions) and labelled by its series value
+    alone, while the extension is named in the title as ``(EXTn)`` instead of on
+    every legend entry. Line style / marker still follow ``uniform_series_style``,
+    same as elsewhere.
     """
     extensions = sorted(subset["ext"].unique())
     color_extensions = color_extensions if color_extensions is not None else extensions
@@ -669,22 +673,30 @@ def _render_quantity(ax, subset, column, spec, config, fits, series_list,
 
     if ext_separate and extensions:
         # One extension per axes: colour by series (the dimension being compared)
-        # using the palette extensions normally get, drawn with a uniform style.
+        # using the palette extensions normally get. Style/marker still honour
+        # uniform_series_style, same as the non-ext_separate branch below.
         ext = extensions[0]
         palette = (config["colors"] if isinstance(config["colors"], list)
                    and config["colors"] else DEFAULT_PALETTE)
+        uniform = config["uniform_series_style"] or suppress
         for idx, series in enumerate(series_list if has_series else [None]):
             sub = subset if series is None else subset[subset["series"] == series]
             sub = sub.sort_values("x")
             if sub.empty:
                 continue
             color = palette[idx % len(palette)]
-            # With no series to distinguish, the single line needs no legend entry
-            # (the extension is already named in the title).
-            label = ("_nolegend_" if series is None
+            style = _style_for(series, series_list, config["series_line_styles"],
+                               uniform=uniform)
+            marker = _marker_for(series, series_list, config["series_markers"],
+                                 uniform=uniform)
+            # With no series to distinguish (no series column, or just the one series
+            # shared by every extension), the single line needs no legend entry --
+            # the extension is already named in the title, and a lone series is named
+            # in the figure suptitle instead (see plot_all_together and plot_mega).
+            label = ("_nolegend_" if series is None or not multi_series
                      else _series_legend(config, series))
-            _draw_line(ax, sub, column, color, "-", label, fit_line,
-                       fit_lookup.get((ext, series)), config, marker="o",
+            _draw_line(ax, sub, column, color, style, label, fit_line,
+                       fit_lookup.get((ext, series)), config, marker=marker,
                        connect=connect)
     for ext in extensions if not ext_separate else []:
         ext_rows = subset[subset["ext"] == ext]
@@ -972,9 +984,13 @@ def plot_all_together(data, config, fits):
 
     # Each group is (subset, group_series, colour-extension list, ext_separate,
     # suffix, suptitle_extra); a per-extension figure names its extension in the
-    # suptitle instead of in every cell title.
+    # suptitle instead of in every cell title. A lone series (shared by every
+    # extension, so it can't be told apart in the legend) is named there too.
     if config["ext_separate_plot"]:
-        groups = [(data[data["ext"] == e], None, extensions, True, f"_ext{e}", f"EXT{e}")
+        only = series_list[0] if len(series_list) == 1 else None
+        groups = [(data[data["ext"] == e], None, extensions, True, f"_ext{e}",
+                   f"EXT{e} ({_series_legend(config, only)})" if only is not None
+                   else f"EXT{e}")
                   for e in extensions]
     elif series_split:
         groups = [(data[data["series"] == s], s, None, False, f"_{s}",
@@ -1001,7 +1017,8 @@ def plot_mega(data, config, fits):
     overlays that extension's series, colour per series); without it the rows are
     series (each cell overlays that series' extensions, colour per extension). So
     the row count is the number of extensions or the number of series -- never the
-    product.
+    product. With ext_separate_plot, a lone series (shared by every row) is named
+    once in the figure suptitle instead of the legend.
     """
     series_list = [s for s in data["series"].dropna().unique()]
     quantities = list(config["quantities"].items())
@@ -1030,7 +1047,12 @@ def plot_mega(data, config, fits):
                              series_list, group_series, legend_fontsize="small",
                              color_extensions=extensions, ext_separate=ext_separate,
                              show_legend=False)
-    return _save_subplots(fig, config, "_mega", legend_axes=list(axes.flatten()))
+    # With ext_separate_plot, a lone series is shared by every row (extension) and
+    # can't be told apart in the legend, so name it once in the figure suptitle.
+    only = series_list[0] if ext_separate and len(series_list) == 1 else None
+    extra = f"({_series_legend(config, only)})" if only is not None else None
+    return _save_subplots(fig, config, "_mega", legend_axes=list(axes.flatten()),
+                          suptitle_extra=extra)
 
 
 def plot_overlaid(data, config, fits):
