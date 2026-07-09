@@ -47,9 +47,9 @@
         }
     },
     "datasets": [
-        {"x": -19.0, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-8/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_836d8173/extension_summary.csv"},
-        {"x": -20.5, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-20.5/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_93d5c75f/extension_summary.csv"},
-        {"x": -21.5, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/VR-8_VDD-21.5/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_fa54b412/extension_summary.csv"}
+        {"x": -19.0, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/VR-8_VDD-19/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_6b67a337/extension_summary.csv"},
+        {"x": -20.5, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/VR-8_VDD-20.5/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_378f5b8f/extension_summary.csv"},
+        {"x": -21.5, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/VR-8_VDD-21.5/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_fcb1b0f8/extension_summary.csv"}
     ],
     "individual_figsize": [9,6.5],
     "subplots_figsize": [13,10]

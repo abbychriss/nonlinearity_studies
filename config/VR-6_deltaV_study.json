@@ -1,14 +1,14 @@
 {
     "study_name": "VR6_deltaV",
     "suptitle": null,
-    "x_label": "deltaV of SW",
+    "x_label": "deltaV from nominal",
     "invert_x": false,
     "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/deltaV_nonlinearity_meta",
     "series_label": "VR (V)",
     "plot_together": true,
     "plot_mega": false,
     "plot_overlaid": false,
-    "series_same_plot": true,
+    "series_separate_plot": true,
     "suppress_series_plot": false,
     "x_axis": "value",
     "colors": null,
@@ -32,21 +32,21 @@
     "quantities": {
         "gain_adu_per_e": {
             "ylabel": "Gain (ADU/e-)",
-            "title": "Gain vs VR (deltaV comparison)"
+            "title": "Gain vs deltaV"
         },
         "noise_e": {
             "ylabel": "Noise (e-)",
-            "title": "Noise vs VR (deltaV comparison)"
+            "title": "Noise (e-) vs deltaV"
         },
         "nonlinearity_at_500_e": {
             "ylabel": "Nonlinearity at 500 e- (e-)",
-            "title": "Nonlinearity at 500 e- vs VR (deltaV comparison)"
+            "title": "Nonlinearity at 500 e- vs deltaV"
         }
     },
     "datasets": [
-        {"x": 7, "series": -6, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-6/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_dbec0ad2/extension_summary.csv"},
-        {"x": 10, "series": -6, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR_6_Diego_params/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_11_stitched_7f196d34/extension_summary.csv"}
+        {"x": 0, "series": -6, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-6/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_dbec0ad2/extension_summary.csv"},
+        {"x": 3, "series": -6, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR_6_Diego_params/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_11_stitched_7f196d34/extension_summary.csv"}
     ],
-    "individual_figsize": [9,6.5],
-    "subplots_figsize": [13,10]
+    "individual_figsize": [9,7],
+    "subplots_figsize": [16,10]
 }

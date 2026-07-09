@@ -48,6 +48,7 @@ from pedestal_subtract.__main__ import (
     _normalize_fit_cols,
     _coerce_gain_guess,
 )
+from pedestal_subtract.constants import _ZERO_ONE_N_BINS
 from .cli_config import (
     _derive_data_path,
     _wildcard_free_base,
@@ -55,7 +56,6 @@ from .cli_config import (
     _config_default,
     _window_scale,
     _n_bins,
-    _peakfind_density,
     _normalize_scalar_or_list,
     _int_or_auto,
     _lim_token,
@@ -198,8 +198,7 @@ def main(args=None):
         fit_range_right_ext = _normalize_scalar_or_list(args.fit_range_right)
 
     do_plot_nonlinearity = args.plot_nonlinearity_individual or args.plot_nonlinearity_together
-    save_plots = args.save_plots
-    save_csv = args.save_csv
+    save_output = args.save_output
     output_dir = args.output_dir
     verbose = args.verbose
 
@@ -249,7 +248,7 @@ def main(args=None):
     run_hash = _run_hash(args)
     fig_path = fig_path / f'{fits_file_path.stem}_{run_hash}'
 
-    if save_plots or save_csv:
+    if save_output:
         fig_path.mkdir(parents=True, exist_ok=True)
         config_snapshot_path = fig_path / 'config.json'
         snapshot = {
@@ -260,8 +259,7 @@ def main(args=None):
         with config_snapshot_path.open('w', encoding='utf-8') as f:
             json.dump(snapshot, f, indent=2, sort_keys=True, default=str)
         print(f'Run hash: {run_hash}')
-        outputs = 'Plots' if save_plots else 'CSV output'
-        print(f'{outputs} and config snapshot will be saved to {fig_path}')
+        print(f'Output (plots, CSV) and config snapshot will be saved to {fig_path}')
 
     image_name = fits_file_path.name
 
@@ -360,7 +358,7 @@ def main(args=None):
             show_titles=args.show_titles,
             nimages=nimages,
             verbose=verbose,
-            save_plots=save_plots,
+            save_plots=save_output,
             show_plots=args.show_plots,
             fig_path=str(fig_path),
             file=image_name,
@@ -377,11 +375,10 @@ def main(args=None):
     # Fit zeroth and first electron peaks to double gaussians
     zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges = get_zero_one_peaks_ext(
         data_ext,
-        n=args.zero_one_n_bins,
+        n_bins=args.zero_one_n_bins,
         fit_bounds='default',
         window_left_scale=args.zero_one_window_left_scale,
         window_right_scale=args.zero_one_window_right_scale,
-        peakfind_density=args.zero_one_peakfind_density,
         gain_seed=args.zero_one_gain_guess,
     )
 
@@ -458,7 +455,7 @@ def main(args=None):
 
     # Persist the auto-estimate diagnostics (incl. per-extension confidence) so a
     # saved run records which extensions need review.
-    if save_plots and fit_range_diagnostics is not None:
+    if save_output and fit_range_diagnostics is not None:
         diag_path = fig_path / 'fit_range_estimate.json'
         with diag_path.open('w', encoding='utf-8') as f:
             json.dump({
@@ -522,7 +519,7 @@ def main(args=None):
         resolution_rows=resolution_rows,
         resolution_charges=resolution_charges,
         verbose=verbose,
-        save_path=(fig_path / 'extension_summary.csv') if save_csv else None,
+        save_path=(fig_path / 'extension_summary.csv') if save_output else None,
     )
 
     # Fit a double gaussian to zero + 1 electron peak in each extension
@@ -553,7 +550,7 @@ def main(args=None):
                             sharex=args.plot_zero_one_sharex,
                             sharey=args.plot_zero_one_sharey,
                             show_titles=args.show_titles,
-                            save_plots=save_plots,
+                            save_plots=save_output,
                             show_plots=args.show_plots,
                             fig_path=str(fig_path),
                             file=image_name,
@@ -591,7 +588,7 @@ def main(args=None):
                     additional_title=args.extra_plot_title,
                     suptitle='Peaks in Pixel Charge Distribution',
                     nimages=nimages,
-                    save_plots=save_plots,
+                    save_plots=save_output,
                     show_plots=args.show_plots,
                     fig_path=str(fig_path),
                     file=image_name,
@@ -615,7 +612,7 @@ def main(args=None):
             sharex=args.plot_resolution_sharex,
             sharey=args.plot_resolution_sharey,
             show_titles=args.show_titles,
-            save_plots=save_plots,
+            save_plots=save_output,
             show_plots=args.show_plots,
             fig_path=str(fig_path),
             file=image_name,
@@ -644,7 +641,7 @@ def main(args=None):
                         sharex=args.plot_nonlinearity_sharex,
                         sharey=args.plot_nonlinearity_sharey,
                         show_titles=args.show_titles,
-                        save_plots=save_plots,
+                        save_plots=save_output,
                         show_plots=args.show_plots,
                         fig_path=str(fig_path),
                         file=image_name,
@@ -752,16 +749,11 @@ You can enable any combination of steps using flags below.""",
                        help="Share y-axis range across the 2x2 resolution-window subplots")
     parser.add_argument("--no-plot_resolution_sharey", dest="plot_resolution_sharey", action="store_false",
                        help="Allow independent y-axis ranges per resolution-window subplot (default)")
-    parser.add_argument("-s", "--save_plots", action="store_true",
-                       default=_config_default(config, 'save_plots', False),
-                       help="Save all plots as jpeg images")
-    parser.add_argument("--no-save_plots", dest="save_plots", action="store_false",
-                       help="Disable plot saving when enabled by JSON config")
-    parser.add_argument("--save_csv", action="store_true",
-                       default=_config_default(config, 'save_csv', False),
-                       help="Save the per-extension summary table as a CSV (extension_summary.csv) in the output directory")
-    parser.add_argument("--no-save_csv", dest="save_csv", action="store_false",
-                       help="Disable summary CSV saving when enabled by JSON config")
+    parser.add_argument("-s", "--save_output", action="store_true",
+                       default=_config_default(config, 'save_output', False),
+                       help="Save all output: plots as jpeg images and the per-extension summary table as a CSV (extension_summary.csv) in the output directory")
+    parser.add_argument("--no-save_output", dest="save_output", action="store_false",
+                       help="Disable output saving when enabled by JSON config")
     parser.add_argument("-o", "--output_dir", type=str,
                        default=_config_default(config, 'output_dir', None),
                        help="Directory for all saved output (plots, summary CSV, config snapshot). Defaults to a 'plots/' folder alongside the source FITS.")
@@ -875,10 +867,11 @@ You can enable any combination of steps using flags below.""",
                         default=_config_default(config, 'use_biweight_midvar', True),
                         help="If true, uses Tukey biweight midvariance. If false, uses standard deviation.")
     parser.add_argument("--zero_one_n_bins", type=_n_bins,
-                        default=_config_default(config, 'zero_one_n_bins', 100),
-                        help="Number of bins spanning the zero/one fit window at window "
-                             "scale 1.0 (the count scales up automatically when the window "
-                             "is widened, keeping bin width constant). Integer >= 10. Default 100.")
+                        default=_config_default(config, 'zero_one_n_bins', _ZERO_ONE_N_BINS),
+                        help="Strict number of bins spanning each internal zero/one histogram "
+                             "(test range, peak-search range, and fit/plot window all get this "
+                             "many bins). Widening the window via the scales coarsens the bin "
+                             f"width rather than adding bins. Integer >= 10. Default {_ZERO_ONE_N_BINS}.")
     parser.add_argument("--zero_one_window_left_scale", type=_window_scale,
                         default=_config_default(config, 'zero_one_window_left_scale', 1.0),
                         help="Scale the left half-width of the auto-computed zero/one fit "
@@ -887,12 +880,6 @@ You can enable any combination of steps using flags below.""",
                         default=_config_default(config, 'zero_one_window_right_scale', 1.0),
                         help="Scale the right half-width of the auto-computed zero/one fit "
                              "window (>=1.0; >1 widens past the one-electron peak). Default 1.0.")
-    parser.add_argument("--zero_one_peakfind_density", type=_peakfind_density,
-                        default=_config_default(config, 'zero_one_peakfind_density', 10),
-                        help="Bins-per-ADU of the internal histograms used to LOCATE the zero/one "
-                             "peaks (separate from --zero_one_n_bins, which sets the fit/plot bins). "
-                             "Raise for finer detection, lower to aggregate sparse low-statistics "
-                             "hits. Number >= 1. Default 10.")
     parser.add_argument("--fit_cols", nargs='+', type=int,
                         default=_config_default(config, 'fit_cols', None),
                         metavar='COL',
@@ -1099,9 +1086,6 @@ You can enable any combination of steps using flags below.""",
     if int(parsed_args.zero_one_n_bins) < 10:
         parser.error(f"zero_one_n_bins must be an integer >= 10 (got {parsed_args.zero_one_n_bins})")
     parsed_args.zero_one_n_bins = int(parsed_args.zero_one_n_bins)
-    if float(parsed_args.zero_one_peakfind_density) < 1.0:
-        parser.error(f"zero_one_peakfind_density must be >= 1 (got {parsed_args.zero_one_peakfind_density})")
-    parsed_args.zero_one_peakfind_density = float(parsed_args.zero_one_peakfind_density)
 
     # Group a flat CLI int list into column pairs (and validate the count) up front, so
     # the stored value is the canonical pair / per-extension form.

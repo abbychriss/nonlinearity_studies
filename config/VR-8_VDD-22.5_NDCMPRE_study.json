@@ -1,0 +1,71 @@
+{
+    "study_name": "NDCMPRE_VR-8_VDD-22.5",
+    "suptitle": null,
+    "x_label": "NDCMPRE",
+    "invert_x": false,
+    "x_axis": "value",
+    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VR-8_VDD-22.5_NDCMPRE_100/meta_nonlinearity_results",
+    "series_label": "",
+    "series_separate_plot": false,
+    "ext_separate_plot": false,
+    "suppress_series_plot": false,
+    "uniform_series_style": false,
+    "plot_individual": true,
+    "plot_together": true,
+    "plot_mega": false,
+    "plot_overlaid": false,
+    "show_plots": true,
+    "save_output": true,
+    "save_report": true,
+    "subplots_ncols": 3,
+    "fit_line": false,
+    "connect_points": true,
+    "individual_figsize": [9,7],
+    "subplots_figsize": [16.5,10],
+    "colors": null,
+    "dpi": 450,
+    "use_average": false,
+    "show_multiple_values": true,
+    "show_error_bars": false,
+    "error_bar_line": true,
+    "series_line_styles": ["", "-"],
+    "series_markers": ["^", "o"],
+    "quantities": {
+        "noise_adu": {
+            "ylabel": "Noise (ADU)",
+            "title": "Noise (ADU)",
+            "fit_line": false
+        },
+        "noise_e": {
+            "ylabel": "Noise (e-)",
+            "title": "Noise (e-)",
+            "fit_line": false
+        },
+        "gain_adu_per_e": {
+            "ylabel": "Gain (ADU/e-)",
+            "title": "Gain",
+            "fit_line": false,
+            "xscale": "linear",
+            "yscale": "linear",
+            "xlim": null,
+            "ylim": null
+        },
+        "nonlinearity_at_500_e": {
+            "ylabel": "Nonlinearity at 500 e- (e-)",
+            "title": "Nonlinearity at 500 e-",
+            "fit_line": false
+        },
+        "sigma_e_at_500_e": {
+            "ylabel": "$\\sigma$ (e-)",
+            "title": "$\\sigma$ at 500 e- vs deltaV"
+        },
+        "sigma_e_at_1000_e": {
+            "ylabel": "$\\sigma$ (e-)",
+            "title": "$\\sigma$ at 1000 e- vs deltaV"
+        }
+    },
+    "datasets": [
+        {"x": 0, "exclude_ext": [], "series": null, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC2/VR-8_VDD-22.5/5_images/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_f1f1316c/extension_summary.csv"},
+        {"x": 100, "exclude_ext": [], "series": null, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR-8_VDD-22.5_NDCMPRE_100/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_94e41ec0/extension_summary.csv"}
+    ]
+}

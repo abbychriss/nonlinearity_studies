@@ -11,7 +11,7 @@ through peak finding) and calls those functions, so there is a single source of
 truth for the algorithm.
 
 For production runs use the package CLI instead:
-    run-nonlinearity-studies <fits> -r 1000 --resolution_window 10 --save_plots --save_csv
+    run-nonlinearity-studies <fits> -r 1000 --resolution_window 10 --save_output
     run-nonlinearity-studies -j config/resolution_study.json
 
 Usage

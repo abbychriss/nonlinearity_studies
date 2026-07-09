@@ -76,8 +76,7 @@ CONFIG_KEYS = {
     'plot_resolution_subplots_figsize',
     'plot_resolution_sharex',
     'plot_resolution_sharey',
-    'save_plots',
-    'save_csv',
+    'save_output',
     'output_dir',
     'show_plots',
     'verbose',
@@ -110,7 +109,6 @@ CONFIG_KEYS = {
     'zero_one_n_bins',
     'zero_one_window_left_scale',
     'zero_one_window_right_scale',
-    'zero_one_peakfind_density',
     'fit_cols',
     'zero_one_gain_guess',
     'plot_zero_one_individual_figsize',
@@ -192,16 +190,6 @@ def _n_bins(value):
     return f
 
 
-def _peakfind_density(value):
-    """argparse type for the peak-finding histogram density (bins per ADU): a
-    number >= 1, used only to locate the zero/one peaks, independent of the
-    fit/plot bin count set by --zero_one_n_bins."""
-    f = float(value)
-    if f < 1.0:
-        raise argparse.ArgumentTypeError(f"must be >= 1 (got {f})")
-    return f
-
-
 def _normalize_scalar_or_list(value):
     if isinstance(value, list) and len(value) == 1:
         return value[0]
@@ -228,7 +216,7 @@ def _lim_token(s):
 
 
 _RUN_HASH_EXCLUDE = {
-    'config', 'json', 'verbose', 'save_plots', 'save_csv', 'output_dir', 'show_plots',
+    'config', 'json', 'verbose', 'save_output', 'output_dir', 'show_plots',
     'pedsub_cache_dir', 'force_pedsub',
     'plot_zero_one_adu', 'plot_zero_one_electrons',
     'plot_zero_one_individual', 'plot_zero_one_together',

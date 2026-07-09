@@ -169,7 +169,7 @@ run-nonlinearity-studies \
     "examples/images/VR-3/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
     --plot_zero_one_adu --plot_zero_one_electrons --plot_zero_one_together \
     --plot_nonlinearity_together \
-    --save_plots
+    --save_output
 ```
 
 If we want only the nonlinearity at specific charge values:
@@ -185,18 +185,18 @@ Note that the parabola fit range per extension is chosen automatically using the
 ```bash
 run-nonlinearity-studies \
     "examples/images/VR-3/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
-    --fit_range_right 600 1000 800 1000  --plot_nonlinearity_together --save_plots
+    --fit_range_right 600 1000 800 1000  --plot_nonlinearity_together --save_output
 ```
 
-With `--save_plots`, the full per-extension estimate (chosen value, cross-check, confidence) is written to `fit_range_estimate.json` in the run's output folder. Add `--verbose` to also print the confidence label per extension and a warning for any that need review.
+With `--save_output`, the full per-extension estimate (chosen value, cross-check, confidence) is written to `fit_range_estimate.json` in the run's output folder. Add `--verbose` to also print the confidence label per extension and a warning for any that need review.
 
-To quantify single-electron resolution at one or more charges, pass `--resolution_at`. This prints a per-charge/per-extension table of σ, reduced χ², ΔAIC, peak counts, and verdict, and — with `--save_csv` — merges the same quantities into `extension_summary.csv` as `<field>_at_<charge>_e` columns (e.g. `sigma_e_at_500_e`) alongside gain, noise, and nonlinearity, one row per extension. With a plot flag it also draws the charge distribution in the window with Gaussian fits:
+To quantify single-electron resolution at one or more charges, pass `--resolution_at`. This prints a per-charge/per-extension table of σ, reduced χ², ΔAIC, peak counts, and verdict, and — with `--save_output` — merges the same quantities into `extension_summary.csv` as `<field>_at_<charge>_e` columns (e.g. `sigma_e_at_500_e`) alongside gain, noise, and nonlinearity, one row per extension. With a plot flag it also draws the charge distribution in the window with Gaussian fits:
 
 ```bash
 run-nonlinearity-studies \
     "examples/images/VR-3/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
     --resolution_at 250 500 1000 --resolution_window 10 \
-    --plot_resolution_together --save_plots --save_csv
+    --plot_resolution_together --save_output
 ```
 
 Or can use the json config in `examples/config/resolution_study.json`:
@@ -339,8 +339,7 @@ It's easier to control all options using a JSON file instead of changing paramet
 {
   "file_string": "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits",
   "stitch_fits": false,
-  "save_plots": true,
-  "save_csv": true,
+  "save_output": true,
   "output_dir": null,
   "show_plots": true,
 
@@ -421,7 +420,7 @@ run-nonlinearity-studies -j config/default_nonlinearity.json
 Explicit command-line arguments override JSON values, so this also works:
 
 ```bash
-run-nonlinearity-studies -j config/default_nonlinearity.json --no-save_plots
+run-nonlinearity-studies -j config/default_nonlinearity.json --no-save_output
 ```
 
 ## Options
@@ -429,10 +428,9 @@ run-nonlinearity-studies -j config/default_nonlinearity.json --no-save_plots
 ##### Pipeline / I/O
 - `-j`, `--json PATH`: Load command-line arguments from a JSON config file (CLI arguments override JSON values)
 - `-f`, `--stitch_fits`: Stitch multi-extension FITS files before analysis
-- `-s`, `--save_plots`: Save generated plots as JPEGs
-- `--save_csv`: Save the per-extension summary table as `extension_summary.csv` in the output directory (independent of `--save_plots`)
+- `-s`, `--save_output` / `--no-save_output`: Save all output — generated plots as JPEGs and the per-extension summary table as `extension_summary.csv` in the output directory
 - `-o`, `--output_dir DIR`: Directory for all saved output (plots, summary CSV, config snapshot). Defaults to a `plots/` folder alongside the source FITS.
-- `--show_plots` / `--no-show_plots`: Display plots interactively via `plt.show()` (default `true`). When disabled, figures are simply not shown (and are closed to free memory) instead of switching matplotlib to a non-interactive backend — useful for headless/batch runs, and still works alongside `--save_plots`.
+- `--show_plots` / `--no-show_plots`: Display plots interactively via `plt.show()` (default `true`). When disabled, figures are simply not shown (and are closed to free memory) instead of switching matplotlib to a non-interactive backend — useful for headless/batch runs, and still works alongside `--save_output`.
 - `-v`, `--verbose`: Print verbose output
 - `--nimages N`: Number of stitched images (used for plot labeling). Auto-detected from filenames matching `_N_stitched`
 - `--extra_plot_title TITLE`: Additional title text prepended to every plot title
@@ -446,7 +444,7 @@ Each plot type is controlled by its `_individual` and `_together` toggles (see [
 - `-r`, `--resolution_at CHARGE...`: Quantify single-electron resolution at one or more charge values (see [Single-electron resolution](#single-electron-resolution))
 
 ##### Per-extension summary table
-Every run prints a per-extension summary table to stdout (no flag required) with the **gain** in ADU/e- (the separation between the zero- and one-electron peaks from the double-Gaussian fit), the **noise** in e- (the standard deviation of the zero-electron peak, converted from ADU to electrons by dividing by the gain), and one **nonlinearity** column per charge passed to `--get_nonlinearity_at` (falling back to 500 e- when none is given). With `--save_csv`, the same table is written as a CSV (`extension_summary.csv`) in the output directory — one row per extension with a header row, ready to load with `numpy.genfromtxt(..., delimiter=',', names=True)` or `numpy.loadtxt(..., delimiter=',', skiprows=1)`.
+Every run prints a per-extension summary table to stdout (no flag required) with the **gain** in ADU/e- (the separation between the zero- and one-electron peaks from the double-Gaussian fit), the **noise** in e- (the standard deviation of the zero-electron peak, converted from ADU to electrons by dividing by the gain), and one **nonlinearity** column per charge passed to `--get_nonlinearity_at` (falling back to 500 e- when none is given). With `--save_output`, the same table is written as a CSV (`extension_summary.csv`) in the output directory — one row per extension with a header row, ready to load with `numpy.genfromtxt(..., delimiter=',', names=True)` or `numpy.loadtxt(..., delimiter=',', skiprows=1)`.
 
 ##### Pedestal subtraction
 - `--do_pedestal_subtraction` / `--no-do_pedestal_subtraction`: Toggle pedestal subtraction (default `true`)
@@ -471,7 +469,7 @@ Every run prints a per-extension summary table to stdout (no flag required) with
 - `--changepoint_factor FLOAT`: (changepoint) local roughness must exceed `factor × baseline` (or the absolute floor, whichever is larger) to mark the noise onset (default `4.0`; lower = more sensitive).
 - `--changepoint_floor FLOAT`: (changepoint) absolute roughness floor in **electrons** (default `0.15`). Keeps an ultra-quiet early region from setting an impossibly tight threshold that would trip on sub-noise waviness. Sits between clean scatter (~0.02–0.05) and noisy-region roughness (~0.3–0.5); the first knob to revisit if a dataset has very different peak-location noise.
 - `--changepoint_persist N`: (changepoint) number of consecutive points that must exceed the threshold to count as the noise onset (default `4`; higher = more robust to isolated outliers / precursor bumps).
-- `--fit_range_confidence_tol FLOAT`: (changepoint) relative tolerance for the `var(a)` cross-check (default `0.15` = 15%). After estimating each extension, the independent `var(a)` value is computed; extensions where the two disagree by more than this fraction are flagged `LOW` confidence — printed at runtime with a `<-- REVIEW` marker and recorded in `fit_range_estimate.json` in the run's output folder (when `--save_plots`).
+- `--fit_range_confidence_tol FLOAT`: (changepoint) relative tolerance for the `var(a)` cross-check (default `0.15` = 15%). After estimating each extension, the independent `var(a)` value is computed; extensions where the two disagree by more than this fraction are flagged `LOW` confidence — printed at runtime with a `<-- REVIEW` marker and recorded in `fit_range_estimate.json` in the run's output folder (when `--save_output`).
 - `--auto_fit_range_tolerance FLOAT` / `--auto_fit_range_max_charge_percentile FLOAT` / `--auto_fit_range_min_peaks_in_fit INT`: (`var_a` method only) optional guards — accept the smallest candidate within `(1+tol)×min_score`, cap candidates at a charge percentile, and reject candidates enclosing too few peaks, respectively.
 - `--noise_onset_window N` / `--noise_onset_factor FLOAT`: (`noise_onset` method only) sliding-window size and the MAD-over-baseline factor for noise onset.
 
@@ -484,7 +482,7 @@ The resolution step runs only when `--resolution_at` is given. For each requeste
 - `--resolution_sigma_limit FLOAT`: σ (e-) at/above which peaks are **unresolved** (no central valley, separation < 2σ). Default `0.5`. Between `sigma_well` and `sigma_limit` the verdict is `marginal`.
 - `--resolution_min_peak_frac FLOAT`: Detected/expected peak fraction below which the window is **unresolved** regardless of σ. Default `0.6`. This catches windows where the peak finder recovered far fewer than the ~`window+1` peaks the window should hold (e.g. 2 of 11) — too smeared to detect, so the under-determined σ is meaningless.
 
-The verdict, σ, reduced χ², ΔAIC, and detected/expected peak counts are printed in a per-charge/per-extension table. With `--save_csv` the same quantities are pivoted to one row per extension and merged into `extension_summary.csv` in the run's output folder, as `<field>_at_<charge>_e` columns (e.g. `sigma_e_at_500_e`) alongside gain, noise, and nonlinearity.
+The verdict, σ, reduced χ², ΔAIC, and detected/expected peak counts are printed in a per-charge/per-extension table. With `--save_output` the same quantities are pivoted to one row per extension and merged into `extension_summary.csv` in the run's output folder, as `<field>_at_<charge>_e` columns (e.g. `sigma_e_at_500_e`) alongside gain, noise, and nonlinearity.
 
 ##### Plot layout (per plot type)
 For each of `plot_zero_one`, `plot_all_peaks`, `plot_nonlinearity`, `plot_resolution`:
@@ -524,13 +522,13 @@ The cache is **not** automatically invalidated if the source FITS file itself ch
 ### Analysis Functions
 
 - `convert_to_electrons(data, pedestal, gain, flatten=True)`: Convert ADU values to electron counts
-- `calculate_noise_gain(data, zero_one_test_range='auto', n=200, fit_bounds='default')`: Determine noise and gain from charge data with data-driven zero/one peak initialization
+- `calculate_noise_gain(data, zero_one_test_range='auto', n_bins=75, fit_bounds='default')`: Determine noise and gain from charge data with data-driven zero/one peak initialization
 - `pedestal_subtract(data, n_std_to_mask, axis='row', use_biweight_loc=True, use_biweight_midvar=True, max_iter=5, tol=0.01)`: Vectorized per-row/column pedestal subtraction for a single extension. Iteratively sigma-clips to the zero-peak core (recomputing both location and scale from the clipped pixels each pass) so overlapping one-electron pixels don't bias the pedestal; stops early once the median per-line shift falls below `tol`.
 - `pedestal_subtract_ext_cached(data_ext, source_path, n_std_to_mask, axis='row', use_biweight_loc=True, use_biweight_midvar=True, cache_dir=None, force=False, verbose=True)`: Wraps `pedestal_subtract` across all extensions and caches the result to `<source_stem>.pedsub.fits`. Reuses the cache when the pedestal parameters and algorithm version recorded in the cached FITS header match.
 - `get_fits(file_path)`: Load FITS file data (returns list of 4 extension arrays)
 - `find_all_peaks(data, width, buffer, pedestal, noise, gain, ...)`: Single-extension peak finder
 - `fit_nonlinearity(peaks, centers, pedestal, gain, fit_range_right, ...)`: Single-extension parabolic fit of the nonlinearity curve
-- `get_zero_one_peaks_ext(data_ext, n=200, fit_bounds='default', zero_one_test_range='auto')`: Per-extension zero/one peak fits; returns counts, edges, pedestals, gains, double-Gaussian popts, fit ranges
+- `get_zero_one_peaks_ext(data_ext, n_bins=75, fit_bounds='default', zero_one_test_range='auto')`: Per-extension zero/one peak fits; returns counts, edges, pedestals, gains, double-Gaussian popts, fit ranges
 - `get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, ...)`: Per-extension peak finder
 - `get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_right_ext, ...)`: Per-extension nonlinearity fit
 - `estimate_fit_range_right_changepoint_ext(peaks_ext, centers_ext, pedestals, gains, win=25, factor=4.0, floor=0.15, persist=4, cross_check=True, confidence_rel_tol=0.15, ...)`: Per-extension `fit_range_right` estimate via the default changepoint detector. Returns `(values, diagnostics)`, where `diagnostics` holds the chosen value, the `var(a)` cross-check, and a per-extension `OK`/`LOW` confidence label. (Single-extension core: `estimate_fit_range_right_changepoint`.)
