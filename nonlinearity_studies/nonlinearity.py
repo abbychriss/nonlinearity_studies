@@ -40,12 +40,13 @@ def get_nonlinearity_at(q, parabola_coeff, parabola_pcov=None, fit_range_right=N
     return nonlinearity_at_q
 
 
-def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, bins='default', flatten=True, do_convert_to_electrons=True, range_left='default', range_right=2000, bin_factor=10, prominences=None, print_values=False):
+def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, bins='default', flatten=True, do_convert_to_electrons=True, range_left='default', range_right=2000, nonlinearity_peakfinder_bin_factor=10, prominences=None, print_values=False):
     counts_ext = []
     edges_ext = []
     peaks_ext = []
     centers_ext = []
     hist_ranges = []
+    data_electrons_ext = []
 
     if type(widths) is not list:
         widths = [widths] * len(data_ext)
@@ -70,9 +71,9 @@ def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, 
         noise = double_gauss_popts[ext][0]
         gain = gains[ext]
 
-        counts, edges, peaks, centers, properties, hist_range = find_all_peaks(data, 
-                                                                               width, 
-                                                                               buffer, 
+        counts, edges, peaks, centers, properties, hist_range, data_electrons = find_all_peaks(data,
+                                                                               width,
+                                                                               buffer,
                                                                                pedestal,
                                                                                noise,
                                                                                gain,
@@ -81,18 +82,19 @@ def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, 
                                                                                do_convert_to_electrons=do_convert_to_electrons,
                                                                                range_left=range_left,
                                                                                range_right=range_right,
-                                                                               bin_factor=bin_factor,
+                                                                               nonlinearity_peakfinder_bin_factor=nonlinearity_peakfinder_bin_factor,
                                                                                prominence=prominence)
-    
+
         counts_ext.append(counts)
         edges_ext.append(edges)
         peaks_ext.append(peaks)
         centers_ext.append(centers)
         hist_ranges.append(hist_range)
+        data_electrons_ext.append(data_electrons)
     if print_values:
         print('***********************************************************')
-    
-    return counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges
+
+    return counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges, data_electrons_ext
 
 
 def get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_right_ext, do_convert_to_electrons=False, fit_bounds_low=-100, fit_bounds_high=100):
