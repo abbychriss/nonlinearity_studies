@@ -40,12 +40,14 @@ from pedestal_subtract.core import (
     get_fits_header,
     _scalar_for_extension,
     plot_charge_per_column,
+    _INDIVIDUAL_FIGSIZE,
 )
 from pedestal_subtract.__main__ import (
     OVERSCAN_COLS,
     _overscan_ext_indices,
     _coerce_fit_cols,
     _normalize_fit_cols,
+    _resolve_fit_col_masks,
     _coerce_gain_guess,
 )
 from pedestal_subtract.constants import _ZERO_ONE_N_BINS
@@ -174,8 +176,10 @@ def main(args=None):
 
     # Get values from argparse arguments
     do_stitch_images = args.stitch_fits
-    do_plot_charge_per_column = args.plot_charge_per_column
-    do_plot_zero_one_peaks = args.plot_zero_one_adu or args.plot_zero_one_electrons
+    do_plot_charge_per_column = args.plot_charge_per_column_together or args.plot_charge_per_column_individual
+    do_plot_zero_one_peaks = (args.plot_zero_one_ADU_individual or args.plot_zero_one_ADU_together
+                               or args.plot_zero_one_electrons_individual
+                               or args.plot_zero_one_electrons_together)
     do_plot_all_peaks = args.plot_all_peaks_individual or args.plot_all_peaks_together
     get_nonlinearity_at_charges = args.get_nonlinearity_at
 
@@ -276,7 +280,12 @@ def main(args=None):
 
     # Resolve the per-extension fit-column slice up front (before pedestal subtraction,
     # which rebinds data_ext), so it is available to the fit-column restriction below.
-    fit_cols_ext = _normalize_fit_cols(args.fit_cols, len(data_ext))
+    # _normalize_fit_cols only parses the spec (None / 'auto' / a list of (lo, hi)
+    # keep-regions per extension); _resolve_fit_col_masks turns that into concrete
+    # per-column boolean keep-masks (using the raw, pre-pedestal-subtraction frame for
+    # the 'auto' hot-column computation), mirroring pedestal_subtract's own __main__.py.
+    fit_cols_spec = _normalize_fit_cols(args.fit_cols, len(data_ext))
+    fit_cols_ext = _resolve_fit_col_masks(fit_cols_spec, raw_data_ext, args.n_std_to_mask)
 
     # Per-extension overscan setting: each selected extension estimates its per-row
     # pedestal from the overscan columns only (still subtracted from the full frame);
@@ -315,17 +324,26 @@ def main(args=None):
             overscan_cols=overscan_cols,
         )
 
+    # Full pedestal-subtracted frame, kept aside (before the fit_cols restriction below
+    # rebinds data_ext) so the all-peaks finder can scan every pixel in the image rather
+    # than just the columns used for zero/one calibration. This is what gives the
+    # high-charge end of the spectrum enough statistics even when fit_cols selects a
+    # small region for calibration.
+    full_data_ext = data_ext
+
     # Restrict the columns used for the zero/one fit (and the plotted histograms), if
     # configured. Done after pedestal subtraction so the per-row pedestal (and any
     # overscan estimate) still sees the full frame. The fit flattens each extension, so
     # this only changes which pixels enter the zero/one histogram, not the geometry.
     if any(fc is not None for fc in fit_cols_ext):
         data_ext = [
-            np.asarray(d)[:, fc[0]:fc[1]] if fc is not None else d
-            for d, fc in zip(data_ext, fit_cols_ext)
+            np.asarray(d)[:, mask] if mask is not None else d
+            for d, mask in zip(data_ext, fit_cols_ext)
         ]
         if verbose:
-            print(f'Restricting the fit columns per extension: {fit_cols_ext}')
+            kept = [int(m.sum()) if m is not None else None for m in fit_cols_ext]
+            print(f'Restricting the fit columns per extension: spec={fit_cols_spec}, '
+                  f'kept_columns={kept}')
 
     if fit_range_right_ext != 'auto':
         if not isinstance(fit_range_right_ext, list):
@@ -353,7 +371,10 @@ def main(args=None):
             raw_data_ext,
             n_std_to_mask=args.n_std_to_mask,
             fit_cols_ext=fit_cols_ext,
-            figsize=tuple(args.plot_charge_per_column_figsize),
+            subplots_figsize=tuple(args.plot_charge_per_column_figsize),
+            individual_figsize=tuple(args.plot_charge_per_column_individual_figsize),
+            plot_together=args.plot_charge_per_column_together,
+            plot_individual=args.plot_charge_per_column_individual,
             additional_title=args.extra_plot_title,
             show_titles=args.show_titles,
             nimages=nimages,
@@ -390,8 +411,10 @@ def main(args=None):
         needed = max(res_charges) + args.resolution_window / 2.0 + 50
         all_peaks_range_right = max(all_peaks_range_right, int(np.ceil(needed)))
 
-    # Apply scipy peak finder to find location of every electron peak
-    counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges = get_all_peaks_ext(data_ext,
+    # Apply scipy peak finder to find location of every electron peak. Uses the full
+    # frame (full_data_ext), not the fit_cols-restricted data_ext used for calibration,
+    # so peak statistics aren't limited to whatever subset of columns fit_cols selected.
+    counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges, data_electrons_ext = get_all_peaks_ext(full_data_ext,
                                                                                 widths=args.peak_finder_widths,
                                                                                 buffers=args.peak_finder_buffers,
                                                                                 prominences=args.peak_finder_prominences,
@@ -403,7 +426,7 @@ def main(args=None):
                                                                                 do_convert_to_electrons=True,
                                                                                 range_left='default',
                                                                                 range_right=all_peaks_range_right,
-                                                                                bin_factor=args.bin_factor,
+                                                                                nonlinearity_peakfinder_bin_factor=args.nonlinearity_peakfinder_bin_factor,
                                                                                 print_values=verbose)
 
     fit_range_diagnostics = None
@@ -522,6 +545,24 @@ def main(args=None):
         save_path=(fig_path / 'extension_summary.csv') if save_output else None,
     )
 
+    # If a meta_studies run is active (see scripts/set_meta_run.py), append this
+    # extension_summary.csv to it as a dataset. Guarded so a problem here can
+    # never break the analysis run.
+    if save_output:
+        try:
+            from . import meta_run
+            summary_csv_path = fig_path / 'extension_summary.csv'
+            result = meta_run.append_dataset(summary_csv_path)
+            active = meta_run.active_run()
+            if result == meta_run.APPENDED:
+                print(f"Added this run to meta study "
+                      f"'{active['run_name']}' ({active['path']})")
+            elif result == meta_run.DUPLICATE:
+                print(f"This run is already in meta study "
+                      f"'{active['run_name']}'; not added again.")
+        except Exception as exc:  # pragma: no cover - defensive
+            print(f'Warning: could not update meta study run ({exc}).')
+
     # Fit a double gaussian to zero + 1 electron peak in each extension
     if do_plot_zero_one_peaks:
         plot_zero_one_peaks(data_ext,
@@ -543,10 +584,10 @@ def main(args=None):
                             yscale=args.plot_zero_one_yscale,
                             fontsize=12,
                             n=100,
-                            do_plot_adu=args.plot_zero_one_adu,
-                            do_convert_to_electrons=args.plot_zero_one_electrons,
-                            plot_individual=args.plot_zero_one_individual,
-                            plot_together=args.plot_zero_one_together,
+                            plot_adu_individual=args.plot_zero_one_ADU_individual,
+                            plot_adu_together=args.plot_zero_one_ADU_together,
+                            plot_electrons_individual=args.plot_zero_one_electrons_individual,
+                            plot_electrons_together=args.plot_zero_one_electrons_together,
                             sharex=args.plot_zero_one_sharex,
                             sharey=args.plot_zero_one_sharey,
                             show_titles=args.show_titles,
@@ -572,6 +613,8 @@ def main(args=None):
                     centers_ext,
                     **all_peaks_limit_kwargs,
                     yscale=args.plot_all_peaks_yscale,
+                    data_ext=data_electrons_ext,
+                    window_bin_factor=args.plot_all_peaks_window_bin_factor,
                     plot_individual=args.plot_all_peaks_individual,
                     plot_together=args.plot_all_peaks_together,
                     sharex=args.plot_all_peaks_sharex,
@@ -687,20 +730,41 @@ You can enable any combination of steps using flags below.""",
                        help="Stitch FITS files by extension")
     parser.add_argument("--no-stitch_fits", dest="stitch_fits", action="store_false",
                        help="Disable FITS stitching when enabled by JSON config")
-    parser.add_argument("--plot_charge_per_column", action="store_true",
-                       default=_config_default(config, 'plot_charge_per_column', False),
+    parser.add_argument("--plot_charge_per_column_together", action="store_true",
+                       default=_config_default(config, 'plot_charge_per_column_together', False),
                        help="Plot the median charge per column for each extension (2x2 grid) on the "
                             "raw, pre-pedestal-subtraction data -- a diagnostic for anomalous columns. "
                             "A column whose median is >= --n_std_to_mask biweight-SDs from the "
                             "extension's biweight location is flagged red. Columns excluded by "
                             "--fit_cols are shaded light grey.")
-    parser.add_argument("--no-plot_charge_per_column", dest="plot_charge_per_column", action="store_false",
-                       help="Disable the charge-per-column plot when enabled by JSON config")
-    parser.add_argument("-z", "--plot_zero_one_adu", action="store_true",
-                       default=_config_default(config, 'plot_zero_one_adu', False),
-                       help="Plot fits to zero/one electron peaks in ADU. Combined with --plot_zero_one_electrons to also (or only) produce the electron-units version.")
-    parser.add_argument("--no-plot_zero_one_adu", dest="plot_zero_one_adu", action="store_false",
-                       help="Disable ADU zero/one peak plotting when enabled by JSON config")
+    parser.add_argument("--no-plot_charge_per_column_together", dest="plot_charge_per_column_together", action="store_false",
+                       help="Disable the combined charge-per-column plot when enabled by JSON config")
+    parser.add_argument("--plot_charge_per_column_individual", action="store_true",
+                       default=_config_default(config, 'plot_charge_per_column_individual', False),
+                       help="Same as --plot_charge_per_column_together, but draws one figure per "
+                            "extension instead of a combined 2x2 grid.")
+    parser.add_argument("--no-plot_charge_per_column_individual", dest="plot_charge_per_column_individual", action="store_false",
+                       help="Disable the individual charge-per-column plots when enabled by JSON config")
+    parser.add_argument("--plot_zero_one_ADU_individual", action="store_true",
+                       default=_config_default(config, 'plot_zero_one_ADU_individual', False),
+                       help="Plot fits to zero/one electron peaks in ADU, one figure per extension.")
+    parser.add_argument("--no-plot_zero_one_ADU_individual", dest="plot_zero_one_ADU_individual", action="store_false",
+                       help="Disable the individual-per-extension ADU zero/one peak plots")
+    parser.add_argument("--plot_zero_one_ADU_together", action="store_true",
+                       default=_config_default(config, 'plot_zero_one_ADU_together', False),
+                       help="Plot fits to zero/one electron peaks in ADU, as a combined 2x2 subplot.")
+    parser.add_argument("--no-plot_zero_one_ADU_together", dest="plot_zero_one_ADU_together", action="store_false",
+                       help="Disable the combined ADU zero/one peak plot")
+    parser.add_argument("--plot_zero_one_electrons_individual", action="store_true",
+                       default=_config_default(config, 'plot_zero_one_electrons_individual', False),
+                       help="Plot fits to zero/one electron peaks in electron units, one figure per extension.")
+    parser.add_argument("--no-plot_zero_one_electrons_individual", dest="plot_zero_one_electrons_individual", action="store_false",
+                       help="Disable the individual-per-extension electron-units zero/one peak plots")
+    parser.add_argument("--plot_zero_one_electrons_together", action="store_true",
+                       default=_config_default(config, 'plot_zero_one_electrons_together', False),
+                       help="Plot fits to zero/one electron peaks in electron units, as a combined 2x2 subplot.")
+    parser.add_argument("--no-plot_zero_one_electrons_together", dest="plot_zero_one_electrons_together", action="store_false",
+                       help="Disable the combined electron-units zero/one peak plot")
     parser.add_argument("-g", "--get_nonlinearity_at", nargs='+', type=float,
                        default=_config_default(config, 'get_nonlinearity_at', None),
                        help="Estimate nonlinearity at specified charge value(s) using parabolic fit")
@@ -775,16 +839,16 @@ You can enable any combination of steps using flags below.""",
                         help="Number of images used in the stack. If not provided, extracted from filename for stitched files.")
     parser.add_argument("--peak_finder_widths", nargs='+', type=float,
                        default=_config_default(config, 'peak_finder_widths', [0.1, 0.1, 0.1, 0.1]),
-                        help="Minimum peak width required by scipy.signal.find_peaks, in units of electrons (internally multiplied by bin_factor to convert to bins). Scalar (applied to all extensions) or one value per extension. Higher = stricter filter on narrow noise spikes.")
+                        help="Minimum peak width required by scipy.signal.find_peaks, in units of electrons (internally multiplied by nonlinearity_peakfinder_bin_factor to convert to bins). Scalar (applied to all extensions) or one value per extension. Higher = stricter filter on narrow noise spikes.")
     parser.add_argument("--peak_finder_buffers", nargs='+', type=int,
                        default=_config_default(config, 'peak_finder_buffers', [3, 3, 3, 3]),
-                        help="Buffer (in bins), SUBTRACTED from bin_factor to compute the minimum neighbor-peak distance: d = bin_factor - buffer. With bin_factor=10: buffer=0 -> 10 bins (1 e- spacing, physical), buffer=3 -> 7 bins (~0.7 e-, loose), buffer=-2 -> 12 bins (1.2 e-, strict). Larger buffer = looser, smaller/negative = stricter.")
+                        help="Buffer (in bins), SUBTRACTED from nonlinearity_peakfinder_bin_factor to compute the minimum neighbor-peak distance: d = nonlinearity_peakfinder_bin_factor - buffer. With nonlinearity_peakfinder_bin_factor=10: buffer=0 -> 10 bins (1 e- spacing, physical), buffer=3 -> 7 bins (~0.7 e-, loose), buffer=-2 -> 12 bins (1.2 e-, strict). Larger buffer = looser, smaller/negative = stricter.")
     parser.add_argument("--peak_finder_prominences", nargs='+', type=float,
                        default=_config_default(config, 'peak_finder_prominences', None),
                         help="Minimum peak prominence required by scipy.signal.find_peaks, in histogram counts (same units as the y-axis of plot_all_peaks). Scalar or one value per extension. None disables the filter. Larger = stricter. Often the most robust filter for separating real electron peaks from noise.")
-    parser.add_argument("--bin_factor", type=int,
-                       default=_config_default(config, 'bin_factor', 10),
-                        help="Number of histogram bins per electron used in the all-peaks histogram. Also controls peak_finder_widths conversion (electrons -> bins) and the buffer math (distance = bin_factor - buffer). Higher = finer resolution but more sensitive to noise.")
+    parser.add_argument("--nonlinearity_peakfinder_bin_factor", type=int,
+                       default=_config_default(config, 'nonlinearity_peakfinder_bin_factor', 10),
+                        help="Number of histogram bins per electron used in the all-peaks histogram. Also controls peak_finder_widths conversion (electrons -> bins) and the buffer math (distance = nonlinearity_peakfinder_bin_factor - buffer). Higher = finer resolution but more sensitive to noise.")
     parser.add_argument("--fit_range_right", nargs='+', type=_int_or_auto,
                        default=_config_default(config, 'fit_range_right', 'auto'),
                         help="Right charge bound (in electrons) for the parabolic nonlinearity fit. Accepts: a single int applied to all extensions (e.g. 500), one int per extension (e.g. 600 850 750 1050), or the literal 'auto' to enable the data-driven estimator that picks the value minimizing var(a) of the parabola fit per extension.")
@@ -913,7 +977,12 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("--plot_charge_per_column_figsize", nargs=2, type=float,
                         default=_config_default(config, 'plot_charge_per_column_figsize', [13, 9]),
                         metavar=('W', 'H'),
-                        help="Figure size (width height) for the charge-per-column plot")
+                        help="Figure size (width height) for the combined charge-per-column plot")
+    parser.add_argument("--plot_charge_per_column_individual_figsize", nargs=2, type=float,
+                        default=_config_default(config, 'plot_charge_per_column_individual_figsize',
+                                                 list(_INDIVIDUAL_FIGSIZE)),
+                        metavar=('W', 'H'),
+                        help="Figure size (width height) for the individual charge-per-column plots")
     parser.add_argument("--plot_all_peaks_xlim", nargs='+', type=_lim_token,
                         default=_config_default(config, 'plot_all_peaks_xlim', None),
                         metavar='VAL',
@@ -925,6 +994,14 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("--plot_all_peaks_yscale", type=str,
                         default=_config_default(config, 'plot_all_peaks_yscale', 'linear'),
                         help="Y-axis scale for all-peaks plot. Options: 'linear', 'log'")
+    parser.add_argument("--plot_all_peaks_window_bin_factor", type=float,
+                        default=_config_default(config, 'plot_all_peaks_window_bin_factor', None),
+                        help="If set, re-histogram the all-peaks plot within the displayed "
+                             "--plot_all_peaks_xlim window at this many bins/electron, instead "
+                             "of reusing the (typically coarser) full-spectrum histogram from "
+                             "--nonlinearity_peakfinder_bin_factor. Lets you zoom into a narrow charge window at finer "
+                             "resolution without re-running peak-finding. Requires a concrete "
+                             "--plot_all_peaks_xlim (not 'none'/'default').")
     parser.add_argument("--plot_all_peaks_individual_figsize", nargs=2, type=float,
                         default=_config_default(config, 'plot_all_peaks_individual_figsize', [7, 6]),
                         metavar=('W', 'H'),
@@ -949,16 +1026,6 @@ You can enable any combination of steps using flags below.""",
                         default=_config_default(config, 'plot_nonlinearity_ylim', None),
                         metavar='VAL',
                         help="Y-axis limits for nonlinearity plot. Provide 2 values (BOTTOM TOP) to apply to all extensions, or 8 values (B1 T1 B2 T2 B3 T3 B4 T4) for per-extension limits. Defaults to auto if not set.")
-    parser.add_argument("--plot_zero_one_individual", action="store_true",
-                        default=_config_default(config, 'plot_zero_one_individual', False),
-                        help="Plot zero/one peaks as one figure per extension")
-    parser.add_argument("--no-plot_zero_one_individual", dest="plot_zero_one_individual", action="store_false",
-                        help="Disable individual zero/one peak plots when enabled by JSON config")
-    parser.add_argument("--plot_zero_one_together", action="store_true",
-                        default=_config_default(config, 'plot_zero_one_together', True),
-                        help="Plot zero/one peaks as a combined 2x2 subplot")
-    parser.add_argument("--no-plot_zero_one_together", dest="plot_zero_one_together", action="store_false",
-                        help="Disable combined zero/one peak subplot")
     parser.add_argument("--plot_all_peaks_individual", action="store_true",
                         default=_config_default(config, 'plot_all_peaks_individual', False),
                         help="Plot all-peaks as one figure per extension")
@@ -979,11 +1046,6 @@ You can enable any combination of steps using flags below.""",
                         help="Plot nonlinearity as a combined 2x2 subplot")
     parser.add_argument("--no-plot_nonlinearity_together", dest="plot_nonlinearity_together", action="store_false",
                         help="Disable combined nonlinearity subplot")
-    parser.add_argument("--plot_zero_one_electrons", action="store_true",
-                        default=_config_default(config, 'plot_zero_one_electrons', False),
-                        help="Also produce zero/one peak plots converted to electrons (in addition to ADU)")
-    parser.add_argument("--no-plot_zero_one_electrons", dest="plot_zero_one_electrons", action="store_false",
-                        help="Disable the electron-units zero/one peak plots")
     parser.add_argument("--plot_zero_one_yscale", type=str,
                         default=_config_default(config, 'plot_zero_one_yscale', 'linear'),
                         help="Y-axis scale for zero/one peak plots. Options: 'linear', 'log'")
