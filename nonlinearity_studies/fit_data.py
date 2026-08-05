@@ -18,7 +18,7 @@ def find_all_peaks(data,
                    do_convert_to_electrons=True,
                    range_left='left_of_zero',
                    range_right=2500,
-                   bin_factor=10,
+                   nonlinearity_peakfinder_bin_factor=10,
                    prominence=None):
 
     if flatten:
@@ -36,13 +36,17 @@ def find_all_peaks(data,
     hist_range = (range_left, range_right)
 
     if bins=='default':
-       bins=math.floor((hist_range[1]-hist_range[0])*bin_factor)
+       bins=math.floor((hist_range[1]-hist_range[0])*nonlinearity_peakfinder_bin_factor)
 
     counts, edges = np.histogram(data, bins=bins,range=hist_range)
     centers = 0.5 * (edges[1:] + edges[:-1])
-    peaks, properties = scipy_find_peaks(counts, height=0, width=width*bin_factor, distance=bin_factor-buffer, prominence=prominence)
+    peaks, properties = scipy_find_peaks(counts, height=0, width=width*nonlinearity_peakfinder_bin_factor, distance=nonlinearity_peakfinder_bin_factor-buffer, prominence=prominence)
 
-    return counts, edges, peaks, centers, properties, hist_range
+    # Also return the (electron-converted, if applicable) flattened data, so callers
+    # that need to re-histogram a subset of it (e.g. plot_all_peaks zooming into a
+    # narrow charge window at a finer nonlinearity_peakfinder_bin_factor than was used here) don't have to
+    # redo the flattening/ADU->electron conversion themselves.
+    return counts, edges, peaks, centers, properties, hist_range, data
 
 
 def fit_nonlinearity(peaks, centers, pedestal, gain, fit_range_right, do_convert_to_electrons=False, fit_bounds_low=-100, fit_bounds_high=100):
