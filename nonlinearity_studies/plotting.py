@@ -1,6 +1,7 @@
 """
 plotting — split out of nonlinearity_studies.py.
 """
+import math
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
@@ -65,12 +66,31 @@ def _auto_ylim_in_window(centers, counts, xlim_e, yscale='linear', pad=0.05):
     return (bottom, top)
 
 
+def _windowed_hist(data, window, bin_factor):
+    """Re-histogram ``data`` over just ``window`` at ``bin_factor`` bins/electron.
+
+    Used by plot_all_peaks when ``data_ext``/``window_bin_factor`` are given, so a
+    zoomed-in view can use a bin width independent of (typically finer than) whatever
+    nonlinearity_peakfinder_bin_factor was used for peak-finding over the full spectrum in get_all_peaks_ext.
+    Only the samples inside ``window`` are binned, which keeps this fast even though
+    peak-finding itself still ran over the full charge range.
+    """
+    bins = math.floor((window[1] - window[0]) * bin_factor)
+    data = np.asarray(data)
+    data_window = data[(data > window[0]) & (data < window[1])]
+    counts, edges = np.histogram(data_window, bins=bins, range=window)
+    centers = 0.5 * (edges[1:] + edges[:-1])
+    return counts, centers
+
+
 def plot_all_peaks(counts_ext,
                    peaks_ext,
                    centers_ext,
                    xlim=(500,510),
                    ylim='none',
-                   yscale='linear', 
+                   yscale='linear',
+                   data_ext=None,
+                   window_bin_factor=None,
                    plot_individual=False, plot_together=False,
                    draw_lines=True, linecolor='r', linestyle='--',
                    peak_number_labels_individual=True, peak_number_labels_together=True, peak_number_label_size=8,
@@ -94,27 +114,38 @@ def plot_all_peaks(counts_ext,
     fig_name = fig_path / base_name
 
     if plot_individual:
-        for ext, counts in enumerate(counts_ext):
-            peaks=peaks_ext[ext]
+        for ext, peaks in enumerate(peaks_ext):
             centers=centers_ext[ext]
-            bin_width = centers[1] - centers[0]
-            
+            xlim_e = xlim[ext] if isinstance(xlim, list) else xlim
+            ylim_e = ylim[ext] if isinstance(ylim, list) else ylim
+
+            if data_ext is not None and window_bin_factor is not None:
+                window = _xlim_window(xlim_e)
+                if window is None:
+                    raise ValueError(
+                        f'plot_all_peaks: data_ext/window_bin_factor rebinning requires a '
+                        f'concrete (left, right) xlim window, got xlim={xlim_e!r} for EXT {ext + 1}.'
+                    )
+                counts, plot_centers = _windowed_hist(data_ext[ext], window, window_bin_factor)
+            else:
+                counts = counts_ext[ext]
+                plot_centers = centers
+            bin_width = plot_centers[1] - plot_centers[0]
+
             fig, ax = plt.subplots(1, 1, figsize=individual_figsize, constrained_layout=True)
             if show_titles:
                 ax.set_title(f'{additional_title}{suptitle} (Nimages = {nimages}): EXT {ext + 1}', fontsize=12, pad=10)
-            ax.bar(centers, counts, align='center', edgecolor='none', linewidth=0, width=bin_width)
+            ax.bar(plot_centers, counts, align='center', edgecolor='none', linewidth=0, width=bin_width)
             ax.set_xlabel(r'Charge ($e^-$)')
             ax.set_ylabel('N')
             if yscale!='linear':
                 ax.set_yscale(yscale)
-            xlim_e = xlim[ext] if isinstance(xlim, list) else xlim
-            ylim_e = ylim[ext] if isinstance(ylim, list) else ylim
             if xlim_e!='none':
                 ax.set_xlim(xlim_e)
             if ylim_e != 'none':
                 ax.set_ylim(ylim_e)
             else:
-                auto_ylim = _auto_ylim_in_window(centers, counts, xlim_e, yscale)
+                auto_ylim = _auto_ylim_in_window(plot_centers, counts, xlim_e, yscale)
                 if auto_ylim is not None:
                     ax.set_ylim(auto_ylim)
 
@@ -151,25 +182,36 @@ def plot_all_peaks(counts_ext,
             fig.suptitle(f'{additional_title}{suptitle} (Nimages = {nimages})')
 
         _auto_ylims = []
-        for ext, counts in enumerate(counts_ext):
-            peaks=peaks_ext[ext]
+        for ext, peaks in enumerate(peaks_ext):
             centers=centers_ext[ext]
-            bin_width = centers[1] - centers[0]
             ax = axs[ext]
+            xlim_e = xlim[ext] if isinstance(xlim, list) else xlim
+            ylim_e = ylim[ext] if isinstance(ylim, list) else ylim
 
-            ax.bar(centers, counts, align='center', edgecolor='none', linewidth=0, width=bin_width)
+            if data_ext is not None and window_bin_factor is not None:
+                window = _xlim_window(xlim_e)
+                if window is None:
+                    raise ValueError(
+                        f'plot_all_peaks: data_ext/window_bin_factor rebinning requires a '
+                        f'concrete (left, right) xlim window, got xlim={xlim_e!r} for EXT {ext + 1}.'
+                    )
+                counts, plot_centers = _windowed_hist(data_ext[ext], window, window_bin_factor)
+            else:
+                counts = counts_ext[ext]
+                plot_centers = centers
+            bin_width = plot_centers[1] - plot_centers[0]
+
+            ax.bar(plot_centers, counts, align='center', edgecolor='none', linewidth=0, width=bin_width)
             ax.set_xlabel(r'Charge ($e^-$)')
             ax.set_ylabel('N')
             if yscale!='linear':
                 ax.set_yscale(yscale)
-            xlim_e = xlim[ext] if isinstance(xlim, list) else xlim
-            ylim_e = ylim[ext] if isinstance(ylim, list) else ylim
             if xlim_e!='none':
                 ax.set_xlim(xlim_e)
             if ylim_e != 'none':
                 ax.set_ylim(ylim_e)
             else:
-                auto_ylim = _auto_ylim_in_window(centers, counts, xlim_e, yscale)
+                auto_ylim = _auto_ylim_in_window(plot_centers, counts, xlim_e, yscale)
                 if auto_ylim is not None:
                     ax.set_ylim(auto_ylim)
                     _auto_ylims.append(auto_ylim)
@@ -459,9 +501,7 @@ def plot_resolution(results_ext, charges,
                 if show_titles:
                     ax.set_title(
                         f'{additional_title}{suptitle} (Nimages = {nimages}): '
-                        f'EXT {res["ext"]}, q = {res["q"]:.0f} $e^-$  '
-                        f'(window {res["lo"]:.0f}-{res["hi"]:.0f}, '
-                        f'{res["n_components"]}/{res["expected_peaks"]} peaks)',
+                        f'EXT {res["ext"]}, {res["q"]:.0f} $e^-$',
                         fontsize=11, pad=10)
                 if save_plots:
                     output_path = fig_name.with_stem(
