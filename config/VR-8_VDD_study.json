@@ -1,16 +1,14 @@
 {
-    "study_name": "VR8_VDD",
+    "study_name": "VR-8_VDD",
     "suptitle": null,
     "x_label": "VDD (V)",
-    "invert_x": true,
-    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/nonlinearity_results",
+    "invert_x": false,
+    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/meta_nonlinearity",
     "series_label": "VR (V)",
-    "series_same_plot": true,
+    "series_separate_plot": true,
+    "ext_separate_plot": false,
     "suppress_series_plot": false,
-    "series_line_styles": {
-        "Standard": "-",
-        "Increased": "--"
-    },
+    "series_line_styles": null,
     "x_axis": "value",
     "colors": null,
     "dpi": 350,
@@ -24,7 +22,6 @@
     "connect_points": null,
     "error_bar_line": true,
     "plot_individual": true,
-    "ext_separate_plot": false,
     "plot_together": false,
     "plot_mega": false,
     "plot_overlaid": false,
@@ -39,19 +36,32 @@
         },
         "noise_e": {
             "ylabel": "Noise (e-)",
-            "title": "Noise vs VDD"
+            "title": "Noise (e-) vs VDD"
+        },
+        "noise_adu": {
+            "ylabel": "Noise (ADU)",
+            "title": "Noise (ADU) vs VDD"
         },
         "nonlinearity_at_500_e": {
             "ylabel": "Nonlinearity at 500 e- (e-)",
             "title": "Nonlinearity at 500 e- vs VDD"
+        },
+        "sigma_e_at_500_e": {
+            "ylabel": "Resolution sigma (e-)",
+            "title": "Resolution sigma at 500 e- vs VDD"
+        },
+        "sigma_e_at_1000_e": {
+            "ylabel": "Resolution sigma (e-)",
+            "title": "Resolution sigma at 1000 e- vs VDD",
+            "yscale": "log"
         }
     },
     "datasets": [
-        {"x": -19.0, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/VR-8_VDD-19/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_6b67a337/extension_summary.csv"},
-        {"x": -20.5, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/VR-8_VDD-20.5/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_378f5b8f/extension_summary.csv"},
-        {"x": -21.5, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/VR-8_VDD-21.5/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_fcb1b0f8/extension_summary.csv"}
+        {"x": -19.0, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/VR-8_VDD-19/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_2c3a528d/extension_summary.csv"},
+        {"x": -20.5, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/VR-8_VDD-20.5/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_039f906f/extension_summary.csv"},
+        {"x": -21.5, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/VR-8_VDD-21.5/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_1bb0ac72/extension_summary.csv"}
     ],
     "individual_figsize": [9,6.5],
-    "subplots_figsize": [13,10]
+    "subplots_figsize": [16,9]
 }
 

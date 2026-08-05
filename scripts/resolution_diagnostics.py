@@ -56,12 +56,12 @@ def load_extensions(fits_path, do_pedsub=None, bin_factor=10, range_right=1500):
     _, _, pedestals, gains, double_gauss_popts, _ = get_zero_one_peaks_ext(
         data_ext, n=100, fit_bounds='default',
     )
-    counts_ext, _, peaks_ext, centers_ext, _ = get_all_peaks_ext(
+    counts_ext, _, peaks_ext, centers_ext, _, _ = get_all_peaks_ext(
         data_ext, widths=[0.1, 0.1, 0.1, 0.1], buffers=[3, 3, 3, 3],
         prominences=[None, None, None, None],
         pedestals=pedestals, double_gauss_popts=double_gauss_popts, gains=gains,
         bins='default', flatten=True, do_convert_to_electrons=True,
-        range_left='default', range_right=range_right, bin_factor=bin_factor,
+        range_left='default', range_right=range_right, nonlinearity_peakfinder_bin_factor=bin_factor,
         print_values=False,
     )
     return counts_ext, centers_ext, peaks_ext, gains, double_gauss_popts

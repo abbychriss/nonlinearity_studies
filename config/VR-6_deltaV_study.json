@@ -1,9 +1,9 @@
 {
-    "study_name": "VR6_deltaV",
+    "study_name": "VR-6_deltaV",
     "suptitle": null,
     "x_label": "deltaV from nominal",
     "invert_x": false,
-    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/deltaV_nonlinearity_meta",
+    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/meta_VR-6_deltaV_nonlinearity_meta",
     "series_label": "VR (V)",
     "plot_together": true,
     "plot_mega": false,
@@ -24,7 +24,7 @@
     "error_bar_line": true,
     "plot_individual": true,
     "ext_separate_plot": false,
-    "subplots_ncols": null,
+    "subplots_ncols": 3,
     "series_column": null,
     "series_line_styles": null,
     "series_markers": null,
@@ -38,15 +38,27 @@
             "ylabel": "Noise (e-)",
             "title": "Noise (e-) vs deltaV"
         },
+        "noise_adu": {
+            "ylabel": "Noise (ADU)",
+            "title": "Noise (ADU) vs deltaV"
+        },
         "nonlinearity_at_500_e": {
             "ylabel": "Nonlinearity at 500 e- (e-)",
             "title": "Nonlinearity at 500 e- vs deltaV"
+        },
+        "sigma_e_at_500_e": {
+            "ylabel": "$\\sigma$ at 500 e- (e-)",
+            "title": "Resolution at 500 e- vs deltaV"
+        },
+        "sigma_e_at_1000_e": {
+            "ylabel": "$\\sigma$ at 1000 e- (e-)",
+            "title": "Resolution at 1000 e- vs deltaV"
         }
     },
     "datasets": [
-        {"x": 0, "series": -6, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-6/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_dbec0ad2/extension_summary.csv"},
-        {"x": 3, "series": -6, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR_6_Diego_params/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_11_stitched_7f196d34/extension_summary.csv"}
+        {"x": 0, "series": -6, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-6/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_6af4b4d7/extension_summary.csv"},
+        {"x": 3, "series": -6, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-6_Diego_params/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_11_stitched_faf34b1a/extension_summary.csv"}
     ],
-    "individual_figsize": [9,7],
+    "individual_figsize": [9,6.5],
     "subplots_figsize": [16,10]
 }

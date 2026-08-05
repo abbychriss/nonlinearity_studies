@@ -20,6 +20,9 @@ build/
 .DS_Store
 .env
 
+# Active meta_studies run pointer (see scripts/set_meta_run.py)
+.meta_run_state.json
+
 # Project specific
 combined-fits/
 stitched-fits/

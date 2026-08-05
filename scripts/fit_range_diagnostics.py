@@ -186,12 +186,12 @@ def build_curves(fits_path, do_pedsub=None):
     _, _, pedestals, gains, double_gauss_popts, _ = get_zero_one_peaks_ext(
         data_ext, n=100, fit_bounds='default',
     )
-    _, _, peaks_ext, centers_ext, _ = get_all_peaks_ext(
+    _, _, peaks_ext, centers_ext, _, _ = get_all_peaks_ext(
         data_ext, widths=[0.1, 0.1, 0.1, 0.1], buffers=[3, 3, 3, 3],
         prominences=[None, None, None, None],
         pedestals=pedestals, double_gauss_popts=double_gauss_popts, gains=gains,
         bins='default', flatten=True, do_convert_to_electrons=True,
-        range_left='default', range_right=1500, bin_factor=10, print_values=False,
+        range_left='default', range_right=1500, nonlinearity_peakfinder_bin_factor=10, print_values=False,
     )
     curves = []
     for ext in range(len(peaks_ext)):

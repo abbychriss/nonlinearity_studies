@@ -149,7 +149,7 @@ In the following examples, I will assume you are working from the base `nonlinea
 ```bash
 run-nonlinearity-studies \
     "examples/images/VR-3/avg_img_CV_250x3500x500_bin1x1_125_20260317_213403_0.fz" \
-    --plot_zero_one_adu --plot_zero_one_together
+    --plot_zero_one_ADU_together
 ```
 
 Next, let's stitch 10 images together from `examples/images/VR-3` and run the analysis script on the stitched output:
@@ -158,7 +158,7 @@ Next, let's stitch 10 images together from `examples/images/VR-3` and run the an
 run-nonlinearity-studies \
     "examples/images/VR-3/avg*.fz" \
     --stitch_fits \
-    --plot_zero_one_adu --plot_zero_one_together \
+    --plot_zero_one_ADU_together \
     --plot_nonlinearity_together
 ```
 
@@ -167,7 +167,7 @@ Now every time we want to analyze the stitched image again, we can pass the stit
 ```bash
 run-nonlinearity-studies \
     "examples/images/VR-3/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits" \
-    --plot_zero_one_adu --plot_zero_one_electrons --plot_zero_one_together \
+    --plot_zero_one_ADU_together --plot_zero_one_electrons_together \
     --plot_nonlinearity_together \
     --save_output
 ```
@@ -343,9 +343,12 @@ It's easier to control all options using a JSON file instead of changing paramet
   "output_dir": null,
   "show_plots": true,
 
-  "plot_charge_per_column": false,
-  "plot_zero_one_adu": true,
-  "plot_zero_one_electrons": true,
+  "plot_charge_per_column_together": false,
+  "plot_charge_per_column_individual": false,
+  "plot_zero_one_ADU_individual": false,
+  "plot_zero_one_ADU_together": true,
+  "plot_zero_one_electrons_individual": false,
+  "plot_zero_one_electrons_together": true,
   "get_nonlinearity_at": 500,
 
   "resolution_at": [200, 600, 1000],
@@ -374,8 +377,6 @@ It's easier to control all options using a JSON file instead of changing paramet
   "peak_finder_prominences": null,
   "fit_range_right": "auto",
 
-  "plot_zero_one_individual": false,
-  "plot_zero_one_together": true,
   "plot_zero_one_individual_figsize": [8, 6],
   "plot_zero_one_subplots_figsize": [12, 8],
   "plot_zero_one_yscale": "linear",
@@ -437,9 +438,9 @@ run-nonlinearity-studies -j config/default_nonlinearity.json --no-save_output
 
 ##### Plotting
 Each plot type is controlled by its `_individual` and `_together` toggles (see [Plot layout](#plot-layout-per-plot-type)) — a plot is generated whenever either is `true`.
-- `--plot_charge_per_column`: Plot the median charge per column for each extension (a single 2×2 grid) on the **raw**, pre-pedestal-subtraction data — a diagnostic for anomalous columns. A column whose median sits ≥ `--n_std_to_mask` biweight-SDs from the extension's biweight location is flagged "hot" (drawn red). Every column is plotted; columns excluded by `--fit_cols` are shaded light grey. `--plot_charge_per_column_figsize W H` sets its figure size (default `13 9`).
-- `-z`, `--plot_zero_one_adu`: Render the zero/one electron peak fits in ADU (units selector for the zero/one plot)
-- `--plot_zero_one_electrons`: Render the zero/one electron peak fits in e- (independent of the ADU flag)
+- `--plot_charge_per_column_together` / `--plot_charge_per_column_individual`: Plot the median charge per column for each extension (a combined 2×2 grid, or one figure per extension) on the **raw**, pre-pedestal-subtraction data — a diagnostic for anomalous columns. A column whose median sits ≥ `--n_std_to_mask` biweight-SDs from the extension's biweight location is flagged "hot" (drawn red). Every column is plotted; columns excluded by `--fit_cols` are shaded light grey. `--plot_charge_per_column_figsize W H` sets the combined figure size (default `13 9`); `--plot_charge_per_column_individual_figsize W H` sets the individual figure size (default `8 6`).
+- `--plot_zero_one_ADU_individual` / `--plot_zero_one_ADU_together`: Render the zero/one electron peak fits in ADU, one figure per extension / as a combined 2×2 grid. The two are independent — set either, both, or neither.
+- `--plot_zero_one_electrons_individual` / `--plot_zero_one_electrons_together`: Same, but in electron units. Fully independent of the ADU flags above, so ADU and electron-units plots, and individual vs. combined layout, can each be toggled on their own.
 - `-g`, `--get_nonlinearity_at CHARGE...`: Evaluate the nonlinearity polynomial at one or more charge values
 - `-r`, `--resolution_at CHARGE...`: Quantify single-electron resolution at one or more charge values (see [Single-electron resolution](#single-electron-resolution))
 
@@ -456,10 +457,10 @@ Every run prints a per-extension summary table to stdout (no flag required) with
 - `--force_pedsub`: Recompute pedestal subtraction even if a matching cache exists
 
 ##### Fitting
-- `--peak_finder_widths W [W ...]`: Minimum peak width required by `scipy.signal.find_peaks`, in **electrons** (internally multiplied by `bin_factor` to convert to bins). Scalar or one per extension. Larger = filters narrow noise spikes more aggressively.
-- `--peak_finder_buffers B [B ...]`: Buffer (in **bins**) SUBTRACTED from `bin_factor` to compute the minimum neighbor-peak distance: `d = bin_factor - buffer`. With the default `bin_factor=10`: `buffer=0` → 10 bins = 1 electron spacing (physical), `buffer=3` → 7 bins ≈ 0.7 electron (loose), `buffer=-2` → 12 bins = 1.2 electron (strict). Larger buffer = looser; smaller/negative = stricter.
+- `--peak_finder_widths W [W ...]`: Minimum peak width required by `scipy.signal.find_peaks`, in **electrons** (internally multiplied by `nonlinearity_peakfinder_bin_factor` to convert to bins). Scalar or one per extension. Larger = filters narrow noise spikes more aggressively.
+- `--peak_finder_buffers B [B ...]`: Buffer (in **bins**) SUBTRACTED from `nonlinearity_peakfinder_bin_factor` to compute the minimum neighbor-peak distance: `d = nonlinearity_peakfinder_bin_factor - buffer`. With the default `nonlinearity_peakfinder_bin_factor=10`: `buffer=0` → 10 bins = 1 electron spacing (physical), `buffer=3` → 7 bins ≈ 0.7 electron (loose), `buffer=-2` → 12 bins = 1.2 electron (strict). Larger buffer = looser; smaller/negative = stricter.
 - `--peak_finder_prominences P [P ...]`: Minimum peak prominence in **histogram counts** (same units as the y-axis of `plot_all_peaks`). Scalar, one per extension, or `null` to disable. Often the most robust filter — measures how far a peak sticks up above its surrounding baseline, regardless of width.
-- `--bin_factor N`: Number of histogram bins per electron in the all-peaks histogram (default `10`). Also drives the `peak_finder_widths` electron-to-bin conversion (`width_in_bins = width_in_electrons * bin_factor`) and the buffer math (`distance_in_bins = bin_factor - buffer`). Higher = finer histogram, but small-width/large-buffer values become more permissive.
+- `--nonlinearity_peakfinder_bin_factor N`: Number of histogram bins per electron in the all-peaks histogram (default `10`). Also drives the `peak_finder_widths` electron-to-bin conversion (`width_in_bins = width_in_electrons * nonlinearity_peakfinder_bin_factor`) and the buffer math (`distance_in_bins = nonlinearity_peakfinder_bin_factor - buffer`). Higher = finer histogram, but small-width/large-buffer values become more permissive.
 - `--fit_range_right CHARGE [CHARGE ...] | auto`: Right charge bound (in electrons) for the parabolic nonlinearity fit. Accepts a single int applied to all extensions, one int per extension (e.g. `600 850 750 1050`), or the literal `auto` to pick it per extension with a data-driven estimator (see `--auto_fit_range_method`).
 - `--auto_fit_range_method {changepoint, var_a, noise_onset}`: Estimator used when `--fit_range_right auto` (default `changepoint`). The nonlinearity curve is a clean parabola up to some charge, then becomes noisy; the goal is to fit only the clean part.
   - `changepoint` (**default, recommended**): a two-stage, drift-free changepoint detector. It computes *local* roughness (the robust residual scatter of a local quadratic fit in a sliding window), which stays flat through the whole clean parabola regardless of its curvature and steps up sharply at the noise onset; it then refines the exact cut on the points that are guaranteed clean. Immune to the two `var_a` failure modes below.
@@ -485,13 +486,15 @@ The resolution step runs only when `--resolution_at` is given. For each requeste
 The verdict, σ, reduced χ², ΔAIC, and detected/expected peak counts are printed in a per-charge/per-extension table. With `--save_output` the same quantities are pivoted to one row per extension and merged into `extension_summary.csv` in the run's output folder, as `<field>_at_<charge>_e` columns (e.g. `sigma_e_at_500_e`) alongside gain, noise, and nonlinearity.
 
 ##### Plot layout (per plot type)
-For each of `plot_zero_one`, `plot_all_peaks`, `plot_nonlinearity`, `plot_resolution`:
+For each of `plot_all_peaks`, `plot_nonlinearity`, `plot_resolution`, `plot_charge_per_column`:
 - `--<plot>_individual` / `--no-<plot>_individual`: Render one figure per extension
 - `--<plot>_together` / `--no-<plot>_together`: Render a single 2×2 subplot grid for all extensions
 - `--<plot>_individual_figsize W H`: Figure size for individual mode
 - `--<plot>_subplots_figsize W H`: Figure size for the 2×2 together mode
 - `--<plot>_sharex` / `--no-<plot>_sharex`: Share x-axis range across the 2×2 grid
 - `--<plot>_sharey` / `--no-<plot>_sharey`: Share y-axis range across the 2×2 grid
+
+`plot_zero_one` follows the same `_individual_figsize`/`_subplots_figsize`/`_sharex`/`_sharey` knobs, but instead of one shared pair of `_individual`/`_together` toggles it has four independent ones split by unit: `--plot_zero_one_ADU_individual`, `--plot_zero_one_ADU_together`, `--plot_zero_one_electrons_individual`, `--plot_zero_one_electrons_together` (see [Plotting](#plotting)) — so ADU vs. electron units and individual vs. combined layout can each be toggled on their own.
 
 Top-row x-axis labels and right-column y-axis labels are always hidden in the 2×2 grids (tick labels are kept regardless of `sharex`/`sharey`).
 
@@ -545,7 +548,7 @@ The cache is **not** automatically invalidated if the source FITS file itself ch
 
 Each plotting function has `plot_individual` and `plot_together` options to plot each extension separately or as one subplot, individual + 2x2 subplot sizes, `sharex`/`sharey` for the 2×2 subplot, `show_titles`, `show_plots`, and `save_plots`/`fig_path` for output.
 
-- `plot_zero_one_peaks(data_ext, zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges, do_plot_adu=True, do_convert_to_electrons=False, yscale='linear', ...)`: Visualize zero/one electron peak fits in ADU and/or electrons.
+- `plot_zero_one_peaks(data_ext, zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges, plot_adu_individual=False, plot_adu_together=True, plot_electrons_individual=False, plot_electrons_together=True, yscale='linear', ...)`: Visualize zero/one electron peak fits in ADU and/or electrons, individually and/or combined.
 - `plot_all_peaks(counts_ext, peaks_ext, centers_ext, xlim, ylim='none', yscale='log', draw_lines=True, ...)`: Visualize the full charge distribution with a marker at each identified peak.
 - `plot_nonlinearity(peaks_ext, parabola_coeffs, peak_charge_e_ext, charge_minus_npeak_ext, fit_range_right_ext, xlim='default', ylim='default', ...)`: Plot the nonlinearity curve and parabolic fit. `xlim`/`ylim` accept `'default'`, `'none'`, a single `(left, right)` applied to all extensions, or a list of 4 per-extension tuples.
 - `plot_resolution(results_ext, charges, sigma_well=0.25, sigma_limit=0.5, plot_individual=False, plot_together=True, ...)`: Plot the resolution windows from `resolution_at_charge_ext` — data histogram, the individual comb components, the comb sum, the single-Gaussian null, and a verdict annotation box. `plot_individual` makes one figure per (extension, charge); `plot_together` makes one 2×2 grid per charge.

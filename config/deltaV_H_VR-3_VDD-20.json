@@ -1,0 +1,128 @@
+{
+    "study_name": "deltaV_H_VR-3_VDD-20",
+    "suptitle": "deltaV_H (SW+DG+OG) VR = -3 VDD = -20",
+    "x_label": "",
+    "invert_x": false,
+    "x_axis": "value",
+    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_H_scan_VR-3_VDD-20/meta_nonlinearity_results",
+    "series_label": null,
+    "ext_separate_plot": false,
+    "series_separate_plot": true,
+    "plot_individual": true,
+    "plot_together": true,
+    "plot_mega": false,
+    "plot_overlaid": false,
+    "show_plots": true,
+    "save_output": true,
+    "save_report": true,
+    "individual_figsize": [
+        9,
+        7
+    ],
+    "together_subplots_figsize": [
+        16,
+        9
+    ],
+    "colors": null,
+    "dpi": 450,
+    "use_average": false,
+    "show_multiple_values": true,
+    "show_error_bars": false,
+    "fit_line": false,
+    "connect_points": true,
+    "error_bar_line": true,
+    "together_subplot_ncols": 3,
+    "series_column": null,
+    "suppress_series_plot": false,
+    "series_line_styles": [
+        "-",
+        "--"
+    ],
+    "series_markers": [
+        "o",
+        "^"
+    ],
+    "uniform_series_style": false,
+    "quantities": {
+        "noise_adu": {
+            "ylabel": "Noise (ADU)",
+            "title": "Noise (ADU)",
+            "fit_line": false
+        },
+        "noise_e": {
+            "ylabel": "Noise (e-)",
+            "title": "Noise (e-)",
+            "fit_line": false
+        },
+        "gain_adu_per_e": {
+            "ylabel": "Gain (ADU/e-)",
+            "title": "Gain",
+            "fit_line": false
+        },
+        "nonlinearity_at_500_e": {
+            "ylabel": "Nonlinearity at 500 e- (e-)",
+            "title": "Nonlinearity at 500 e-",
+            "fit_line": false
+        },
+        "sigma_e_at_500_e": {
+            "ylabel": "$\\sigma$ at 500 e- (e-)",
+            "title": "Resolution $\\sigma$ at 500 e- (e-)",
+            "fit_line": false
+        },
+        "sigma_e_at_1000_e": {
+            "ylabel": "$\\sigma$ at 1000 e- (e-)",
+            "title": "Resolution $\\sigma$ at 1000 e- (e-)",
+            "fit_line": false
+        }
+    },
+    "datasets": [
+        {
+            "x": "5",
+            "exclude_ext": [],
+            "series": "",
+            "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_H_scan_VR-3_VDD-20/VR-3_VDD-20_delta_H_5/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_9faf577e/extension_summary.csv"
+        },
+        {
+            "x": "4",
+            "exclude_ext": [],
+            "series": "",
+            "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_H_scan_VR-3_VDD-20/VR-3_VDD-20_delta_H_4/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_b9c4c6a8/extension_summary.csv"
+        },
+        {
+            "x": "3",
+            "exclude_ext": [],
+            "series": "",
+            "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_H_scan_VR-3_VDD-20/VR-3_VDD-20_delta_H_3/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_5170a418/extension_summary.csv"
+        },
+        {
+            "x": "2",
+            "exclude_ext": [],
+            "series": "",
+            "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_H_scan_VR-3_VDD-20/VR-3_VDD-20_delta_H_2/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_ab1bd350/extension_summary.csv"
+        },
+        {
+            "x": "1",
+            "exclude_ext": [],
+            "series": "",
+            "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_H_scan_VR-3_VDD-20/VR-3_VDD-20_delta_H_1/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_85942028/extension_summary.csv"
+        },
+        {
+            "x": "0",
+            "exclude_ext": [],
+            "series": "",
+            "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_H_scan_VR-3_VDD-20/VR-3_VDD-20_delta_H_0/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_3_stitched_ca2a2a61/extension_summary.csv"
+        },
+        {
+            "x": "",
+            "exclude_ext": [],
+            "series": "",
+            "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_H_scan_VR-3_VDD-20/VR-3_VDD-20_delta_H_0/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_3_stitched_3f853316/extension_summary.csv"
+        },
+        {
+            "x": "",
+            "exclude_ext": [],
+            "series": "",
+            "table": "/Users/abbychriss/Privitera_335/data/test_chamber/deltaV_H_scan_VR-3_VDD-20/VR-3_VDD-20_delta_H_2/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_952bdbd3/extension_summary.csv"
+        }
+    ]
+}

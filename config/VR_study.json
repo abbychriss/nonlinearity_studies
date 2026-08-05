@@ -2,38 +2,40 @@
     "study_name": "VR",
     "suptitle": null,
     "x_label": "VR (V)",
-    "invert_x": true,
-    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies",
+    "invert_x": false,
+    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/meta_VR_nonlinearity",
     "series_label": "deltaV",
-    "plot_individual": true,
     "ext_separate_plot": false,
+    "series_separate_plot": false,
+    "plot_individual": true,
     "plot_together": true,
     "plot_mega": false,
     "plot_overlaid": false,
     "x_axis": "value",
     "colors": null,
-    "dpi": 350,
+    "dpi": 450,
     "show_plots": true,
     "save_output": true,
     "save_report": true,
+    "individual_figsize": [9,6.5],
+    "together_subplots_figsize": [16,9],
     "use_average": false,
     "show_multiple_values": true,
     "show_error_bars": false,
     "fit_line": false,
     "connect_points": null,
     "error_bar_line": true,
-    "subplots_ncols": null,
+    "together_subplot_ncols": 3,
     "series_column": null,
-    "series_same_plot": true,
-    "suppress_series_plot": false,
+    "suppress_series_plot": true,
     "series_line_styles": null,
     "series_markers": null,
     "uniform_series_style": false,
     "quantities": {
         "gain_adu_per_e": {
             "ylabel": "Gain (ADU/e-)",
-            "title": "Gain vs VR",
-            "fit_line": true,
+            "title": "Gain",
+            "fit_line": false,
             "xscale": "linear",
             "yscale": "linear",
             "xlim": null,
@@ -41,24 +43,38 @@
         },
         "noise_e": {
             "ylabel": "Noise (e-)",
-            "title": "Noise vs VR",
+            "title": "Noise (e-)",
+            "fit_line": false
+        },
+        "noise_adu": {
+            "ylabel": "Noise (ADU)",
+            "title": "Noise (ADU)",
             "fit_line": false
         },
         "nonlinearity_at_500_e": {
             "ylabel": "Nonlinearity at 500 e- (e-)",
             "title": "Nonlinearity at 500 e- vs VR",
             "fit_line": false
+        },
+        "sigma_e_at_1000_e": {
+            "ylabel": "$\\sigma$ at 1000 e- (e-)",
+            "title": "Resolution at 1000 e- vs VR",
+            "fit_line": false
+        },
+        "sigma_e_at_500_e": {
+            "ylabel": "$\\sigma$ at 500 e- (e-)",
+            "title": "Resolution at 500 e- vs VR",
+            "yscale": "log",
+            "fit_line": false
         }
     },
     "datasets": [
-        {"x": -3, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-3/ten-images/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_3deadef8/extension_summary.csv"},
-        {"x": -4, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-4/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_ad841c6d/extension_summary.csv"},
-        {"x": -5, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-5/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_213b37c2/extension_summary.csv"},
-        {"x": -6, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-6/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_dbec0ad2/extension_summary.csv"},
-        {"x": -7, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-7/plots/cds_avg_img_L2_250x3500x500_1x1_L2_124_12_stitched_0392c058/extension_summary.csv"},
-        {"x": -8, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-8/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_836d8173/extension_summary.csv"},
-        {"x": -9, "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-9/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_30fff068/extension_summary.csv"}
-    ],
-    "individual_figsize": [9,6.5],
-    "subplots_figsize": [13,10]
+        {"x": -3, "exclude_ext": [], "series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-3/ten-images/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_274560eb/extension_summary.csv"},
+        {"x": -4,  "exclude_ext": [],"series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-4/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_7f511c10/extension_summary.csv"},
+        {"x": -5,  "exclude_ext": [],"series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-5/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_c1b47495/extension_summary.csv"},
+        {"x": -6,  "exclude_ext": [],"series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-6/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_6af4b4d7/extension_summary.csv"},
+        {"x": -7,  "exclude_ext": [],"series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-7/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_a8accc65/extension_summary.csv"},
+        {"x": -8,  "exclude_ext": [],"series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-8/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_ba82e376/extension_summary.csv"},
+        {"x": -9,  "exclude_ext": [],"series": "Standard", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-9/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_1a7b5216/extension_summary.csv"}
+    ]
 }

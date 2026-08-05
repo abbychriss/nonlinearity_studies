@@ -1,0 +1,98 @@
+{
+    "study_name": "VR-3_VDD-19_NDCMPRE_100",
+    "suptitle": "NDCMPRE Study: VR = -3V, VDD = -19V",
+    "x_label": "NDCMPRE",
+    "invert_x": false,
+    "x_axis": "value",
+    "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VR-3_VDD-19_NDCMPRE_100/meta_nonlinearity_results",
+    "series_label": null,
+    "ext_separate_plot": false,
+    "series_separate_plot": true,
+    "plot_individual": true,
+    "plot_together": true,
+    "plot_mega": false,
+    "plot_overlaid": false,
+    "show_plots": true,
+    "save_output": true,
+    "save_plots": true,
+    "save_csv": true,
+    "save_report": true,
+    "individual_figsize": [
+        9,
+        7
+    ],
+    "together_subplots_figsize": [
+        16,
+        9
+    ],
+    "mega_subplots_figsize": [
+        16,
+        9
+    ],
+    "colors": null,
+    "dpi": 450,
+    "use_average": false,
+    "show_multiple_values": true,
+    "show_error_bars": false,
+    "fit_line": false,
+    "connect_points": true,
+    "error_bar_line": true,
+    "together_subplot_ncols": 3,
+    "series_column": null,
+    "suppress_series_plot": false,
+    "series_line_styles": [
+        "-",
+        "--"
+    ],
+    "series_markers": [
+        "o",
+        "^"
+    ],
+    "uniform_series_style": false,
+    "quantities": {
+        "noise_adu": {
+            "ylabel": "Noise (ADU)",
+            "title": "Noise (ADU)",
+            "fit_line": false
+        },
+        "noise_e": {
+            "ylabel": "Noise (e-)",
+            "title": "Noise (e-)",
+            "fit_line": false
+        },
+        "gain_adu_per_e": {
+            "ylabel": "Gain (ADU/e-)",
+            "title": "Gain",
+            "fit_line": false
+        },
+        "nonlinearity_at_500_e": {
+            "ylabel": "Nonlinearity at 500 e- (e-)",
+            "title": "Nonlinearity at 500 e-",
+            "fit_line": false
+        },
+        "sigma_e_at_500_e": {
+            "ylabel": "$\\sigma$ at 500 e- (e-)",
+            "title": "Resolution $\\sigma$ at 500 e- (e-)",
+            "fit_line": false
+        },
+        "sigma_e_at_1000_e": {
+            "ylabel": "$\\sigma$ at 1000 e- (e-)",
+            "title": "Resolution $\\sigma$ at 1000 e- (e-)",
+            "fit_line": false
+        }
+    },
+    "datasets": [
+        {
+            "x": "100",
+            "exclude_ext": [],
+            "series": "",
+            "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR-3_VDD-19_NDCMPRE_100/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_4e1dee00/extension_summary.csv"
+        },
+        {
+            "x": "0",
+            "exclude_ext": [],
+            "series": "",
+            "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR-3_VDD-19_NDCMPRE_100/VR-3_VDD-19_NDCMPRE_0/plots/cts_avg_img_L2_250x3500x500_1x1_L2_125_5_stitched_c8ec238b/extension_summary.csv"
+        }
+    ]
+}
