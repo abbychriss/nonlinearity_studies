@@ -11,7 +11,8 @@
     "suppress_series_plot": false,
     "uniform_series_style": false,
     "plot_individual": true,
-    "plot_together": true,
+    "plot_quantities_together": true,
+    "plot_ext_together": false,
     "plot_mega": false,
     "plot_overlaid": false,
     "show_plots": true,
@@ -28,8 +29,16 @@
     "show_multiple_values": true,
     "show_error_bars": false,
     "error_bar_line": true,
-    "series_line_styles": ["", "-"],
-    "series_markers": ["^", "o"],
+    "series_plot_styles": [
+        {
+            "linestyle": "",
+            "marker": "^"
+        },
+        {
+            "linestyle": "-",
+            "marker": "o"
+        }
+    ],
     "quantities": {
         "sigma_e_at_500_e": {
             "ylabel": "$\\sigma$ (e-)",

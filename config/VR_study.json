@@ -1,71 +1,82 @@
 {
     "study_name": "VR",
-    "suptitle": null,
+    "suptitle": "VR Scan at VDD $= -19$V",
     "x_label": "VR (V)",
     "invert_x": false,
     "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/meta_VR_nonlinearity",
     "series_label": "deltaV",
-    "ext_separate_plot": false,
-    "series_separate_plot": false,
-    "plot_individual": true,
-    "plot_together": true,
+    "plot_individual": false,
+    "plot_quantities_together": true,
+    "plot_ext_together": false,
     "plot_mega": false,
     "plot_overlaid": false,
     "x_axis": "value",
     "colors": null,
     "dpi": 450,
+    "font_size": 24,
+    "together_legend_fontsize": 14,
+    "font_family": "CMU Serif",
+    "use_tex": true,
+    "inset_legend": false,
+    "series_separate_plot": false,
+    "ext_separate_plot": false,
     "show_plots": true,
     "save_output": true,
     "save_report": true,
-    "individual_figsize": [9,6.5],
-    "together_subplots_figsize": [16,9],
-    "use_average": false,
+    "use_average": true,
     "show_multiple_values": true,
     "show_error_bars": false,
     "fit_line": false,
-    "connect_points": null,
+    "connect_points": true,
     "error_bar_line": true,
-    "together_subplot_ncols": 3,
+    "together_subplots_ncols": 2,
+    "individual_figsize": [10,7.5],
+    "together_subplots_figsize": [14,9],
+    "mega_subplots_figsize": [17,3],
     "series_column": null,
     "suppress_series_plot": true,
-    "series_line_styles": null,
-    "series_markers": null,
     "uniform_series_style": false,
+    "series_plot_styles": {
+                            "default":   {"linewidth": 1.5, "markersize": 12, "alpha": 0.8}
+    },
+    "plot_fit_line": false,
+    "fit_legend": false,
     "quantities": {
         "gain_adu_per_e": {
-            "ylabel": "Gain (ADU/e-)",
-            "title": "Gain",
-            "fit_line": false,
-            "xscale": "linear",
-            "yscale": "linear",
-            "xlim": null,
-            "ylim": null
+            "ylabel": "Gain (ADU/$e^-$)",
+            "title": "",
+            "fit_line": true,
+            "fit_legend": true
         },
         "noise_e": {
-            "ylabel": "Noise (e-)",
-            "title": "Noise (e-)",
-            "fit_line": false
+            "ylabel": "Noise ($e^-$)",
+            "title": "",
+            "fit_line": true,
+            "fit_legend": true
         },
         "noise_adu": {
             "ylabel": "Noise (ADU)",
-            "title": "Noise (ADU)",
-            "fit_line": false
+            "title": "",
+            "exclude_quantity": true
         },
         "nonlinearity_at_500_e": {
-            "ylabel": "Nonlinearity at 500 e- (e-)",
-            "title": "Nonlinearity at 500 e- vs VR",
-            "fit_line": false
-        },
-        "sigma_e_at_1000_e": {
-            "ylabel": "$\\sigma$ at 1000 e- (e-)",
-            "title": "Resolution at 1000 e- vs VR",
-            "fit_line": false
+            "ylabel": "NL$(500~e^-)$ ($e^-$)",
+            "title": "",
+            "fit_line": true,
+            "fit_legend": true,
+            "ylim": [-22,10]
         },
         "sigma_e_at_500_e": {
-            "ylabel": "$\\sigma$ at 500 e- (e-)",
-            "title": "Resolution at 500 e- vs VR",
-            "yscale": "log",
-            "fit_line": false
+            "ylabel": "$\\sigma(500~e^-)$ ($e^-$)",
+            "title": "",
+            "exclude_quantity": true
+        },
+        "sigma_e_at_1000_e": {
+            "ylabel": "$\\sigma(1000~e^-)$ ($e^-$)",
+            "title": "",
+            "connect_points": false,
+            "fit_line": true,
+            "fit_legend": true
         }
     },
     "datasets": [

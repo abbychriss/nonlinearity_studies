@@ -97,7 +97,7 @@ def build_extension_summary(gains, double_gauss_popts, parabola_coeffs, nonlinea
     Returns:
         (rows, charges) where charges is the normalized list of nonlinearity charges, and rows is
         a list of dicts (one per extension) with flat keys: 'ext', 'gain_adu_per_e', 'noise_e',
-        one 'nonlinearity_at_<charge>_e' per nonlinearity charge, and (if resolution_rows was
+        'noise_adu', the parabola coefficients 'nl_a', 'nl_b', 'nl_c', one 'nonlinearity_at_<charge>_e' per nonlinearity charge, and (if resolution_rows was
         given) the merged resolution columns.
     """
     charges = _normalize_charges(nonlinearity_charges)
@@ -112,6 +112,9 @@ def build_extension_summary(gains, double_gauss_popts, parabola_coeffs, nonlinea
             'gain_adu_per_e': gain,
             'noise_e': noise_e,
             'noise_adu': noise_adu,
+            'nl_a': a,
+            'nl_b': b,
+            'nl_c': c,
         }
         for q in charges:
             row[_nonlin_column_name(q)] = a * q**2 + b * q + c
@@ -123,7 +126,7 @@ def build_extension_summary(gains, double_gauss_popts, parabola_coeffs, nonlinea
 
 
 def _summary_fieldnames(charges, resolution_charges=None):
-    fields = ['ext', 'gain_adu_per_e', 'noise_e', 'noise_adu'] + [_nonlin_column_name(q) for q in charges]
+    fields = ['ext', 'gain_adu_per_e', 'noise_e', 'noise_adu', 'nl_a', 'nl_b', 'nl_c'] + [_nonlin_column_name(q) for q in charges]
     if resolution_charges:
         fields += _resolution_wide_fieldnames(resolution_charges)
     return fields

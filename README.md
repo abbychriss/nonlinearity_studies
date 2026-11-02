@@ -20,11 +20,13 @@ The analysis library is organized by responsibility rather than as one large mod
 - `fit_data.py` — fit models and primitives (parabola, Gaussians, peak finding)
 - `fit_range.py` — automatic estimation of the nonlinearity fit range
 - `nonlinearity.py` — nonlinearity computation per extension / at a given charge
+- `nonlinearity_correction.py` — applies the fitted nonlinearity model to an image and saves the corrected FITS
 - `resolution.py` — single-electron resolution fitting and classification
 - `plotting.py` — peak, nonlinearity, and resolution figures
 - `summary.py` — per-extension and wide summary tables (CSV)
 - `run_nonlinearity_studies.py` — command-line interface; `cli_config.py` holds its config/argument helpers
 - `nonlinearity_studies.py` — backwards-compatibility shim that re-exports the public API, so existing `from nonlinearity_studies.nonlinearity_studies import ...` imports keep working
+- `gain_independent_nonlinearity/` — the gain-independent analysis, which leaves the spectrum in ADU instead of calibrating it with the zero/one gain (see [Gain-independent nonlinearity](#gain-independent-nonlinearity))
 
 Zero/one-electron peak fitting, pedestal subtraction, and FITS I/O are provided by the `pedestal_subtract` package; FITS stitching and meta-analysis plotting by `analysis_tools`.
 
@@ -97,6 +99,36 @@ python -m nonlinearity_studies.run_nonlinearity_studies [OPTIONS] <file_string>
 ./nonlinearity_studies/run_nonlinearity_studies.py [OPTIONS] <file_string>
 ```
 
+### Gain-independent nonlinearity
+
+The standard analysis calibrates the whole spectrum with one gain measured from the zero and one electron peaks, then reports how far each peak's charge falls from its peak number. That assumes a constant gain, which is the very thing the nonlinearity measurement contradicts. The `gain_independent_nonlinearity` package runs the same FITS loading, pedestal subtraction and zero/one fit, but histograms the pedestal-subtracted spectrum in **ADU** (`do_convert_to_electrons=False`) and derives the nonlinearity without ever dividing by that gain.
+
+```bash
+gain-independent-nonlinearity -j config/gain_indep_nonlinearity.json
+python -m nonlinearity_studies.gain_independent_nonlinearity.run [OPTIONS] <file_string>
+```
+
+It takes the same JSON config mechanism and the same file/pedestal-subtraction/zero-one/peak-finding options as `run-nonlinearity-studies`, plus its own. Peak finding here is **two steps at two binnings**, with one config key each:
+
+- **Coarse** — `scipy.signal.find_peaks`, keyed on the shared `--nonlinearity_peakfinder_bin_factor` (default `10`), in bins per **electron**, exactly as in the standard analysis. This spectrum is histogrammed in ADU, so the number is converted to bins per ADU (divided by `ADU_PER_E`, a module-level constant in `gain_independent_nonlinearity/run.py`, nominally `1.3`) for the histogram `find_peaks` actually runs on — the physical bin width is the same as upstream either way. `--peak_finder_widths` (electrons) and `--peak_finder_buffers` (normalized to 10 bins/e-) are converted the same way, so all three knobs mean what they mean in the standard analysis.
+- **Sub-bin** — the log-parabola refinement of each of those peaks, keyed on `--sub_bin_peakfinder_bin_factor` (default `40`), in bins per **ADU**. This step has no counterpart in the standard analysis, so it is keyed in the units the spectrum is actually in, and it re-bins the same ADU spectrum over the same range rather than reusing the coarse histogram. `--sub_bin_half_width` counts bins of *this* histogram.
+
+`--peak_finder_buffers` is applied in one place only, the coarse step's `find_peaks` distance filter; the sub-bin step has no distance filter. `ADU_PER_E` never rescales the data, and is a fixed number rather than the per-extension zero/one gains so the peak finder stays independent of the fit. The all-peaks legend names both factors, each in `bins/ADU` with its `bins/e-` equivalent beside it (computed from that extension's real gain, display only), and — when `--plot_all_peaks_window_bin_factor` re-histograms the displayed window — a third entry for the binning the bars are actually drawn at.
+
+The all-peaks plot also overlays the sub-bin fits themselves, each drawn over exactly the window it was fit on: **purple** for the log-parabola fits and **green** for the peaks that fell back to the seeded Gaussian refit (`--sub_bin_fit_alpha`, default `0.6`). Their legend entries count how many peaks each method localized, e.g. `Log parabola fit (1436 / 1553 peaks found)` and `Gaussian fits (117 / 1553 peaks found)`. The fitted amplitudes are rescaled from the sub-bin histogram's bin width to the drawn one, so the curves sit on the bars whatever binning is displayed. Writing q(n) for the ADU charge of peak number n (n = 0 is the zero-electron peak) and g = q(1) - q(0) for the standard gain, it computes:
+
+| quantity | module | meaning |
+| --- | --- | --- |
+| `delta_g(n) = q(n) - q(n-1) - g` | `deltas.py` | differential gain, with a fitted line through the scatter |
+| `I(n) = sum delta_g`, `S(n) = I(n)/n` | `deltas.py` | the nonlinearity in ADU; the slope of S(n) is the nonlinearity parameter alpha' |
+| `Q(n) = a0 + g_fit*n + alpha*n^2` | `spectrum_fit.py` | parabola (and optional cubic) fit to the charge spectrum; `G = g_fit + alpha` is the fit's own gain |
+| `g_fit(i)` | `spectrum_fit.py` | the same fit using only the first i peaks — the average gain over that range — and its residual `g_fit(i) - g` |
+| `g_dir(n) = (q(n) - q(0))/n` | `direct_gain.py` | the gain read straight off peak n, and `delta_dir(n) = g - g_dir(n)` |
+| gain scan | `gain_scan.py` | recomputes the **standard** nonlinearity with every candidate gain `g_fit(i)` and reports the one minimizing \|nonlinearity\| at `--gain_indep_scan_eval_charge` |
+| gain comparison | `compare_nonlinearity_methods.py`, `plot_nonlinearity_curves.py` | overlays the **standard** nonlinearity curve computed with every gain this analysis produces (zero/one, sub-bin, `g_fit(i)` at each `--gain_indep_compare_test_i` and at the scan's optimum, and `g_dir`); also sweeps a bare calibration gain over [1.0, 1.4] at fixed charge, and tracks alpha / alpha' against the peak number they were fit up to, with `g_fit(i)` on a twinned axis |
+
+Peak numbering is anchored on the tallest detected peak, so a low-count bump in the pedestal's left tail cannot take index 0 and shift every peak number by one. `--gain_indep_fit_n_min` (default 2) is where the running fit starts — 2 is a two-point line fit, which reproduces the standard gain exactly, so the scan covers the whole space including the standard method — and `--gain_indep_fit_n_max` caps how far up the spectrum any fit reaches. Left unset it is read off the data per extension by the same changepoint detector the standard analysis uses to place `fit_range_right`, run on the raw ADU spectrum (`x = n`, `y = q(n)`); both of the detector's stages difference out the linear and quadratic parts of the curve, so no gain division or line subtraction is needed and the estimate stays gain independent. The chosen domain is reported as `fit_n_max` in the summary. Wherever a plot draws a fitted curve, a short panel beneath the scatter carries the residuals about that curve, sharing the x axis, in both the individual and the 2x2-together figures. Each calculation has its own `--plot_<name>_individual` / `--plot_<name>_together` pair; they share the `plot_gain_indep_nonlin_*` figure-size and shared-axis settings. The comparison plots are keyed the same way, as `--plot_compare_nonlinearity_curves_*`, `--plot_alpha_alpha_prime_*`, and `--plot_nonlin_vs_gain_*`; the gain sweep behind the last of those is only run when that plot is switched on, since nothing else consumes it. With `--save_output`, every scalar lands in `gain_independent_summary.csv` next to the plots.
+
 ### As a Python module
 
 ```python
@@ -126,7 +158,7 @@ zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, z
     get_zero_one_peaks_ext(data_ext)
 
 # Find every electron peak in each extension
-counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges = get_all_peaks_ext(
+counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges, data_electrons_ext = get_all_peaks_ext(
     data_ext, widths=0.9, buffers=[3, 3, 3, 3],
     pedestals=pedestals, double_gauss_popts=double_gauss_popts, gains=gains,
 )
@@ -255,7 +287,7 @@ Common options (apply to both use cases):
 
 - `study_name`: short name used in output filenames and default titles.
 - `x_label`: axis label for the varied parameter; a `"NAME (UNIT)"` form (e.g. `"VR (V)"`) attaches the unit to values in titles.
-- `quantities`: map of CSV column → spec. Each spec may set `ylabel`, `title`, `title_vs_ext`, `fit_line` and `connect_points` (per-quantity overrides), `xscale`/`yscale` (matplotlib axis scale, e.g. `"linear"` (default) or `"log"`), `xlim`/`ylim` (a `[min, max]` pair fixing that axis range; either entry may be `null` to leave that side autoscaled), and `column` (absolute 0-based CSV index, to pull a column regardless of its header name).
+- `quantities`: map of CSV column → spec. Each spec may set `ylabel`, `title`, `title_vs_ext`, `fit_line`, `plot_fit_line`, `fit_legend` and `connect_points` (per-quantity overrides), `xscale`/`yscale` (matplotlib axis scale, e.g. `"linear"` (default) or `"log"`), `xlim`/`ylim` (a `[min, max]` pair fixing that axis range; either entry may be `null` to leave that side autoscaled), and `column` (absolute 0-based CSV index, to pull a column regardless of its header name).
 - `datasets`: list of `{"x": ..., "table": ..., (optional) "series": ..., "exclude_ext": [...]}`. `table` is a glob string or a list of glob strings.
 - `x_axis`: `"value"` (default) plots the varied parameter on the x-axis, one line per extension; `"extension"` flips it so extension is the x-axis, each series a coloured line, and the x value pinned in the title (one figure per distinct x).
 - `invert_x` (default `false`): reverse the x-axis (e.g. high VR → low VR).
@@ -268,9 +300,11 @@ Common options (apply to both use cases):
 - `show_multiple_values` (default `true`): when averaging pooled several tables, overlay each actual table value as a transparent marker at the same x (with a faint vertical line spanning their range, per `error_bar_line`). Points from a single table add nothing.
 - `show_error_bars` (default `false`): instead of (or in addition to) the actual values, draw mean ± std error bars with transparent caps. Kept as a separate option from `show_multiple_values`.
 - `error_bar_line` (default `true`): whether the faint vertical line is drawn for whichever spread is shown (`show_multiple_values` range and/or `show_error_bars` bar). Set `false` to keep just the transparent markers/caps without the connecting line.
-- `plot_individual` (default `true`): one figure per quantity. `plot_together` (default `false`): all quantities as subplots in one figure.
-- `individual_figsize` (default `[9, 6.5]`), `subplots_figsize` (default `[13, 10]`), `subplots_ncols` (default: roughly square grid).
+- `plot_individual` (default `true`): one figure per quantity. `plot_quantities_together` (default `false`): all quantities as subplots in one figure. `plot_ext_together` (default `false`): one figure per quantity with one subplot per extension, all series overlaid in each subplot, or one figure per (quantity, series) when `series_separate_plot` splits the series (always a roughly square grid, e.g. 2x2).
+- `individual_figsize` (default `[9, 6.5]`), `together_subplots_figsize` (default `[13, 10]`), `together_subplots_ncols` (default: roughly square grid).
 - `fit_line` (default `false`): global toggle for fitting `y = slope·x + intercept` per line (percentage change is always reported).
+- `plot_fit_line` (default `true`): draw the fitted line on the plots. Set `false` to keep the fit in the stats report only. Only matters when `fit_line` is on.
+- `fit_legend` (default `true`): give the fitted line a legend entry (`… fit ($R^2 = …$)`). Set `false` to draw the line without one. If `plot_fit_line` is `false` and `inset_legend` is `false`, the marker's legend entry shows `$R^2 = …$` in place of `EXT<n>` instead, and in the subplot grids that quantity's cell keeps its own legend (left out of the shared one).
 - `connect_points` (default `null`): draw a plain line joining adjacent data points (separate from the fit line). Left `null` it follows the historical behaviour — points are connected only when they aren't being fit — so set it `true` to also connect points under a fit line, or `false` to show bare markers. Honoured globally or per quantity.
 
 Series options (how a second dimension is split into separate lines):
@@ -279,7 +313,7 @@ Series options (how a second dimension is split into separate lines):
 - `series_same_plot` (default `true`): overlay all series on one figure vs. split onto one figure per series.
 - `suppress_series_plot` (default `false`): hide the series distinction in the plots only — every series is drawn on one shared figure with a uniform style and a single `EXT{n}` legend entry per extension (overriding `series_same_plot` and `uniform_series_style` for plotting). The series are still kept in the printed table, fits, and report.
 - `uniform_series_style` (default `false`): when split, force every per-series figure to use the same solid line and circle marker so the figures don't look gratuitously different.
-- `series_line_styles` / `series_markers`: `{series: style}` / `{series: marker}` maps. Markers otherwise only differ between series when there is a single x value (each line is a lone point and the linestyle is invisible).
+- `series_plot_styles`: matplotlib line options per series — either a `{series: {option: value}}` map (plus an optional shared `"default"` entry applied to every series first) or a list of option dicts cycled over the series in order. Any `Line2D` keyword works (`linestyle`, `marker`, `alpha`, `linewidth`, `markersize`, ...), and anything matplotlib won't accept is rejected when the config loads. Unset options fall back to the built-in look: a linestyle *and* a marker cycled per series, so series stay separable even when a single x value makes the linestyle invisible.
 
 **Use case 1 — `extension_summary.csv` (vary a parameter across runs).** The series is a per-dataset tag (`"series"`), constant across each table — e.g. standard vs. increased deltaV at the same VR. See `config/VR6_deltaV_study.json`:
 
@@ -290,8 +324,10 @@ Series options (how a second dimension is split into separate lines):
   "invert_x": true,
   "series_label": "deltaV",
   "series_same_plot": true,
-  "series_line_styles": {"Standard": "-", "Increased": "--"},
-  "series_markers": {"Standard": "o", "Increased": "s"},
+  "series_plot_styles": {
+    "Standard": {"linestyle": "-", "marker": "o"},
+    "Increased": {"linestyle": "--", "marker": "s"}
+  },
   "quantities": {
     "gain_adu_per_e": {"ylabel": "Gain (ADU/e-)", "title": "Gain vs VR"},
     "noise_e": {"ylabel": "Noise (e-)", "title": "Noise vs VR"},
@@ -314,7 +350,7 @@ Series options (how a second dimension is split into separate lines):
   "series_label": "Charge (e-)",
   "series_same_plot": false,
   "uniform_series_style": true,
-  "plot_together": false,
+  "plot_quantities_together": false,
   "quantities": {
     "sigma_e_at_500_e": {"ylabel": "Resolution sigma (e-)", "title": "Resolution sigma at 500 e- vs VDD"},
     "sigma_e_at_1000_e": {"ylabel": "Resolution sigma (e-)", "title": "Resolution sigma at 1000 e- vs VDD"},
@@ -339,6 +375,7 @@ It's easier to control all options using a JSON file instead of changing paramet
 {
   "file_string": "examples/images/stitched-fits/avg_img_CV_250x3500x500_bin1x1_125_10_stitched.fits",
   "stitch_fits": false,
+  "stitch_fits_axis": "vertical",
   "save_output": true,
   "output_dir": null,
   "show_plots": true,
@@ -376,6 +413,10 @@ It's easier to control all options using a JSON file instead of changing paramet
   "peak_finder_buffers": [3, 3, 3, 3],
   "peak_finder_prominences": null,
   "fit_range_right": "auto",
+  "correct_nonlinearity": false,
+  "nonlinearity_correction_model": "parabola",
+  "nonlinearity_fit_fix_intercept": true,
+  "nonlinearity_fit_known_points": null,
 
   "plot_zero_one_individual_figsize": [8, 6],
   "plot_zero_one_subplots_figsize": [12, 8],
@@ -429,6 +470,7 @@ run-nonlinearity-studies -j config/default_nonlinearity.json --no-save_output
 ##### Pipeline / I/O
 - `-j`, `--json PATH`: Load command-line arguments from a JSON config file (CLI arguments override JSON values)
 - `-f`, `--stitch_fits`: Stitch multi-extension FITS files before analysis
+- `--stitch_fits_axis`: `vertical` (default, stack along y) or `horizontal` (stack along x). Only used with `--stitch_fits`.
 - `-s`, `--save_output` / `--no-save_output`: Save all output — generated plots as JPEGs and the per-extension summary table as `extension_summary.csv` in the output directory
 - `-o`, `--output_dir DIR`: Directory for all saved output (plots, summary CSV, config snapshot). Defaults to a `plots/` folder alongside the source FITS.
 - `--show_plots` / `--no-show_plots`: Display plots interactively via `plt.show()` (default `true`). When disabled, figures are simply not shown (and are closed to free memory) instead of switching matplotlib to a non-interactive backend — useful for headless/batch runs, and still works alongside `--save_output`.
@@ -445,7 +487,7 @@ Each plot type is controlled by its `_individual` and `_together` toggles (see [
 - `-r`, `--resolution_at CHARGE...`: Quantify single-electron resolution at one or more charge values (see [Single-electron resolution](#single-electron-resolution))
 
 ##### Per-extension summary table
-Every run prints a per-extension summary table to stdout (no flag required) with the **gain** in ADU/e- (the separation between the zero- and one-electron peaks from the double-Gaussian fit), the **noise** in e- (the standard deviation of the zero-electron peak, converted from ADU to electrons by dividing by the gain), and one **nonlinearity** column per charge passed to `--get_nonlinearity_at` (falling back to 500 e- when none is given). With `--save_output`, the same table is written as a CSV (`extension_summary.csv`) in the output directory — one row per extension with a header row, ready to load with `numpy.genfromtxt(..., delimiter=',', names=True)` or `numpy.loadtxt(..., delimiter=',', skiprows=1)`.
+Every run prints a per-extension summary table to stdout (no flag required) with the **gain** in ADU/e- (the separation between the zero- and one-electron peaks from the double-Gaussian fit), the **noise** in e- (the standard deviation of the zero-electron peak, converted from ADU to electrons by dividing by the gain), and one **nonlinearity** column per charge passed to `--get_nonlinearity_at` (falling back to 500 e- when none is given). With `--save_output`, the same table is written as a CSV (`extension_summary.csv`) in the output directory — one row per extension with a header row, also containing the parabola coefficients `nl_a`, `nl_b`, `nl_c` (nonlinearity NL(q) = a·q² + b·q + c in e-, per extension) so the correction can be re-evaluated at any charge, ready to load with `numpy.genfromtxt(..., delimiter=',', names=True)` or `numpy.loadtxt(..., delimiter=',', skiprows=1)`.
 
 ##### Pedestal subtraction
 - `--do_pedestal_subtraction` / `--no-do_pedestal_subtraction`: Toggle pedestal subtraction (default `true`)
@@ -458,10 +500,15 @@ Every run prints a per-extension summary table to stdout (no flag required) with
 
 ##### Fitting
 - `--peak_finder_widths W [W ...]`: Minimum peak width required by `scipy.signal.find_peaks`, in **electrons** (internally multiplied by `nonlinearity_peakfinder_bin_factor` to convert to bins). Scalar or one per extension. Larger = filters narrow noise spikes more aggressively.
-- `--peak_finder_buffers B [B ...]`: Buffer (in **bins**) SUBTRACTED from `nonlinearity_peakfinder_bin_factor` to compute the minimum neighbor-peak distance: `d = nonlinearity_peakfinder_bin_factor - buffer`. With the default `nonlinearity_peakfinder_bin_factor=10`: `buffer=0` → 10 bins = 1 electron spacing (physical), `buffer=3` → 7 bins ≈ 0.7 electron (loose), `buffer=-2` → 12 bins = 1.2 electron (strict). Larger buffer = looser; smaller/negative = stricter.
+- `--peak_finder_buffers B [B ...]`: Buffer SUBTRACTED from `nonlinearity_peakfinder_bin_factor` to compute the minimum neighbor-peak distance: `d = nonlinearity_peakfinder_bin_factor - buffer`, in bins. The value is quoted **normalized to 10 bins/e-** and scaled to whatever binning is actually in use (`buffer * nonlinearity_peakfinder_bin_factor / 10`), so retuning the bin factor keeps the same physical spacing, and the same number means the same peak separation in the gain-independent module (see above). At 10 bins/e-: `buffer=0` → 10 bins = 1 electron spacing (physical), `buffer=3` → 7 bins ≈ 0.7 electron (loose), `buffer=-2` → 12 bins = 1.2 electron (strict). Larger buffer = looser; smaller/negative = stricter. Fractional values are allowed (e.g. `3.5`).
 - `--peak_finder_prominences P [P ...]`: Minimum peak prominence in **histogram counts** (same units as the y-axis of `plot_all_peaks`). Scalar, one per extension, or `null` to disable. Often the most robust filter — measures how far a peak sticks up above its surrounding baseline, regardless of width.
 - `--nonlinearity_peakfinder_bin_factor N`: Number of histogram bins per electron in the all-peaks histogram (default `10`). Also drives the `peak_finder_widths` electron-to-bin conversion (`width_in_bins = width_in_electrons * nonlinearity_peakfinder_bin_factor`) and the buffer math (`distance_in_bins = nonlinearity_peakfinder_bin_factor - buffer`). Higher = finer histogram, but small-width/large-buffer values become more permissive.
-- `--fit_range_right CHARGE [CHARGE ...] | auto`: Right charge bound (in electrons) for the parabolic nonlinearity fit. Accepts a single int applied to all extensions, one int per extension (e.g. `600 850 750 1050`), or the literal `auto` to pick it per extension with a data-driven estimator (see `--auto_fit_range_method`).
+- `--peak_finder_range_right E`: Right edge, in electrons, of the all-peaks histogram the peak finder runs on (default `1500`). Peak n sits near n e-, so this is roughly the maximum number of peaks found. Raised automatically if `resolution_at` needs more headroom. Not used by the gain-independent module (see `--all_peaks_n_max_electrons`).
+- `--fit_range_right CHARGE [CHARGE ...] | auto`: Right charge bound (in electrons) for the parabolic nonlinearity fit. Accepts a single int applied to all extensions, one int per extension (e.g. `600 850 750 1050`), or the literal `auto` to pick it per extension with a data-driven estimator (see `--auto_fit_range_method`). `auto` can also stand in for individual extensions in a per-extension list (e.g. `auto 685 auto auto`): the estimator runs everywhere and the ints then override it, with those extensions recorded as `"method": "manual"` in `fit_range_estimate.json`.
+- `--nonlinearity_correction_model`: `parabola` (default) or `data`. Selects the `NL(q)` used by `--correct_nonlinearity`. `data` uses the measured nonlinearity (peak charge minus peak number) at the integer electron value nearest each pixel's charge, clipped to the range of detected peaks, instead of the parabola. Assumes peak `n` is the `n`-electron peak, as the nonlinearity fit does.
+- `--correct_nonlinearity`: Subtract the fitted nonlinearity from every pixel, `q_true = q - NL(q)` with `q` the measured pixel charge in e- and `NL` the extension's parabola, and save the corrected image (in electrons, input headers kept) in the run's hash output folder (alongside the plots, since the fit determines the model) as `NL_corrected_<file_name>.fits`. The frame corrected is the one the gain and pedestal were measured on, i.e. the pedestal-subtracted frame when `do_pedestal_subtraction` is on. Pixels above `fit_range_right` are corrected with the extrapolated parabola. Off by default.
+- `--nonlinearity_fit_fix_intercept` / `--no-nonlinearity_fit_fix_intercept`: Hold the nonlinearity parabola's constant term `c` at 0 (default on). `Nonlin(0) = 0` identically — peak number 0 is the zero-electron peak, so its charge is the pedestal and `charge_minus_npeak[0] = 0` by construction — but a free `c` does not have to respect that. When `fit_range_right` reaches past the charge where the curve stops being quadratic, `c` absorbs the high-charge misfit and the drawn parabola ends up offset from a scatter that is pinned to the origin (measured at ~0.5 e- at 0 e- on a 1500-peak fit). Turning it off restores the free three-parameter fit. Applies to every parabolic nonlinearity fit: the production curve, the `auto` fit-range estimators, and the gain-independent module's gain scan and comparison curves. The returned coefficients keep their `(a, b, c)` shape with `c = 0`, so downstream evaluation is unchanged.
+- `--nonlinearity_fit_known_points`: Known nonlinearity values to include in the parabola fit alongside the peaks up to `fit_range_right`, as `[charge, nonlinearity]` pairs in electrons (config: `[[1000, 3.2], [1500, 5.1]]`; CLI: flat `1000 3.2 1500 5.1`). Applied to every extension. In a JSON config it can instead be a list with one entry per extension, each `[[charge, nonlinearity], ...]` or `null` for none (e.g. `[[[1577.27, 4.1]], [[1577.27, 3.8]], null, [[1577.27, 4.4]]]`); the command line form is always the same for every extension. Default `null` (peaks only). They are drawn on the nonlinearity plots, one color per point (orange first), labeled `known NL(<charge>e-) = <NL value>` in the legend. A black dashed curve shows the same fit without the known points. Only the production curve fit uses them; the `auto` fit-range estimators and the gain-independent module do not.
 - `--auto_fit_range_method {changepoint, var_a, noise_onset}`: Estimator used when `--fit_range_right auto` (default `changepoint`). The nonlinearity curve is a clean parabola up to some charge, then becomes noisy; the goal is to fit only the clean part.
   - `changepoint` (**default, recommended**): a two-stage, drift-free changepoint detector. It computes *local* roughness (the robust residual scatter of a local quadratic fit in a sliding window), which stays flat through the whole clean parabola regardless of its curvature and steps up sharply at the noise onset; it then refines the exact cut on the points that are guaranteed clean. Immune to the two `var_a` failure modes below.
   - `var_a`: picks the value minimizing `var(a)` (the variance of the parabola's curvature coefficient, `pcov[0,0]`). Works well when the score curve has a clear minimum, but can fail when the curve is near-linear (score decreases monotonically into the noisy tail) or flat (score collapses to the smallest range).
@@ -530,12 +577,13 @@ The cache is **not** automatically invalidated if the source FITS file itself ch
 - `pedestal_subtract_ext_cached(data_ext, source_path, n_std_to_mask, axis='row', use_biweight_loc=True, use_biweight_midvar=True, cache_dir=None, force=False, verbose=True)`: Wraps `pedestal_subtract` across all extensions and caches the result to `<source_stem>.pedsub.fits`. Reuses the cache when the pedestal parameters and algorithm version recorded in the cached FITS header match.
 - `get_fits(file_path)`: Load FITS file data (returns list of 4 extension arrays)
 - `find_all_peaks(data, width, buffer, pedestal, noise, gain, ...)`: Single-extension peak finder
-- `fit_nonlinearity(peaks, centers, pedestal, gain, fit_range_right, ...)`: Single-extension parabolic fit of the nonlinearity curve
+- `fit_nonlinearity(peaks, centers, pedestal, gain, fit_range_right, ..., fix_intercept=True, known_points=None)`: Single-extension parabolic fit of the nonlinearity curve. `fix_intercept` holds the constant term at 0 (see `--nonlinearity_fit_fix_intercept`); the returned coefficients are `(a, b, c)` either way, with `c = 0` and a zero-padded row/column in `pcov` when it is on.
 - `get_zero_one_peaks_ext(data_ext, n_bins=75, fit_bounds='default', zero_one_test_range='auto')`: Per-extension zero/one peak fits; returns counts, edges, pedestals, gains, double-Gaussian popts, fit ranges
 - `get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, ...)`: Per-extension peak finder
 - `get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_right_ext, ...)`: Per-extension nonlinearity fit
 - `estimate_fit_range_right_changepoint_ext(peaks_ext, centers_ext, pedestals, gains, win=25, factor=4.0, floor=0.15, persist=4, cross_check=True, confidence_rel_tol=0.15, ...)`: Per-extension `fit_range_right` estimate via the default changepoint detector. Returns `(values, diagnostics)`, where `diagnostics` holds the chosen value, the `var(a)` cross-check, and a per-extension `OK`/`LOW` confidence label. (Single-extension core: `estimate_fit_range_right_changepoint`.)
 - `estimate_optimal_fit_range_right_ext(...)` / `estimate_fit_range_right_by_noise_onset_ext(...)`: Alternative `fit_range_right` estimators (`var_a` and experimental `noise_onset`; see `--auto_fit_range_method`).
+- `correct_nonlinearity_ext(data_ext, pedestals, gains, parabola_coeffs, fits_path, out_dir, data_nl=None)`: Apply `q_true = q - NL(q)` to every pixel of every extension and write `NL_corrected_<file_name>.fits` into `out_dir` (with `data_nl`, the per-extension measured charge-minus-peak-number, NL is looked up at the nearest integer e- instead of using the parabola); returns the corrected frames (e-) and the output path
 - `get_nonlinearity_at_ext(q, parabola_coeffs, parabola_pcovs, fit_range_right_ext)`: Evaluate the parabolic fit at one or more charge values, per extension
 - `resolution_at_charge(counts, centers, peaks, q, window, gain, s0)`: Single-extension single-electron resolution at charge `q`. Fits a constrained *n*-Gaussian comb (means fixed at the detected peaks, one shared σ, free amplitudes) in `[q - window/2, q + window/2]` and returns a result dict with `sigma_e`, `sigma_e_err`, `reduced_chi2`, `delta_aic`, `n_components`, `expected_peaks`, and the windowed data/fit curves for plotting.
 - `resolution_at_charge_ext(counts_ext, centers_ext, peaks_ext, gains, double_gauss_popts, charges, window=10.0, sigma_well=0.25, sigma_limit=0.5, min_peak_frac=0.6, ...)`: Per-extension resolution at one or more charges. Returns a nested list (per extension, per charge) of result dicts, each augmented with `ext` and a `verdict`.

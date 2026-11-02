@@ -187,7 +187,7 @@ def build_curves(fits_path, do_pedsub=None):
         data_ext, n=100, fit_bounds='default',
     )
     _, _, peaks_ext, centers_ext, _, _ = get_all_peaks_ext(
-        data_ext, widths=[0.1, 0.1, 0.1, 0.1], buffers=[3, 3, 3, 3],
+        data_ext, widths=[0.1, 0.1, 0.1, 0.1], buffers=[3.0, 3.0, 3.0, 3.0],
         prominences=[None, None, None, None],
         pedestals=pedestals, double_gauss_popts=double_gauss_popts, gains=gains,
         bins='default', flatten=True, do_convert_to_electrons=True,

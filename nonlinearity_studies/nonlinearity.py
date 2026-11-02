@@ -4,7 +4,7 @@ nonlinearity — split out of nonlinearity_studies.py.
 import numpy as np
 from pathlib import Path
 
-from .fit_data import find_all_peaks, fit_nonlinearity
+from .fit_data import find_all_peaks, fit_nonlinearity, resolve_known_points
 
 def get_nonlinearity_at(q, parabola_coeff, parabola_pcov=None, fit_range_right=None, print_values=False, out_lines=None):
     a = parabola_coeff[0]
@@ -12,7 +12,8 @@ def get_nonlinearity_at(q, parabola_coeff, parabola_pcov=None, fit_range_right=N
     c = parabola_coeff[2]
 
     def _emit(s):
-        print(s)
+        if print_values:
+            print(s)
         if out_lines is not None:
             out_lines.append(s)
 
@@ -30,8 +31,6 @@ def get_nonlinearity_at(q, parabola_coeff, parabola_pcov=None, fit_range_right=N
     else:
         for i in range(len(q)):
             _emit(f'Interpolated nonlinearity at {q[i]} e- = {nonlinearity_at_q[i]} e-\n')
-
-    if print_values:
         if fit_range_right is not None:
             _emit(f'Parabola fit was performed up to {fit_range_right} e-\n')
         if parabola_pcov is not None:
@@ -40,7 +39,7 @@ def get_nonlinearity_at(q, parabola_coeff, parabola_pcov=None, fit_range_right=N
     return nonlinearity_at_q
 
 
-def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, bins='default', flatten=True, do_convert_to_electrons=True, range_left='default', range_right=2000, nonlinearity_peakfinder_bin_factor=10, prominences=None, print_values=False):
+def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, bins='default', flatten=True, do_convert_to_electrons=True, range_left='default', range_right=2500, nonlinearity_peakfinder_bin_factor=10, prominences=None, print_values=False):
     counts_ext = []
     edges_ext = []
     peaks_ext = []
@@ -97,8 +96,8 @@ def get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, 
     return counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges, data_electrons_ext
 
 
-def get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_right_ext, do_convert_to_electrons=False, fit_bounds_low=-100, fit_bounds_high=100):
-    
+def get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_right_ext, do_convert_to_electrons=False, fit_bounds_low=-100, fit_bounds_high=100, fix_intercept=True, known_points=None):
+
     peak_charge_e_ext = []
     charge_minus_npeak_ext = []
     parabola_coeffs = []
@@ -106,6 +105,8 @@ def get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_rig
 
     if type(fit_range_right_ext) is not list:
         fit_range_right_ext = [fit_range_right_ext]*len(peaks_ext)
+
+    known_points_ext = resolve_known_points(known_points, len(peaks_ext))
 
     for ext, peaks in enumerate(peaks_ext):
 
@@ -122,7 +123,9 @@ def get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_rig
                                                                              fit_range_right,
                                                                              do_convert_to_electrons,
                                                                              fit_bounds_low,
-                                                                             fit_bounds_high)
+                                                                             fit_bounds_high,
+                                                                             fix_intercept,
+                                                                             known_points_ext[ext])
         except ValueError as exc:
             raise ValueError(f'EXT {ext + 1}: {exc}') from exc
 
@@ -134,18 +137,22 @@ def get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_rig
     return peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs, parabola_pcovs
 
 
-def get_nonlinearity_at_ext(q, parabola_coeffs, parabola_pcovs, fit_range_right_ext, save_path=None):
+def get_nonlinearity_at_ext(q, parabola_coeffs, parabola_pcovs, fit_range_right_ext, save_path=None, verbose=False):
     out_lines = [] if save_path is not None else None
+
+    if type(fit_range_right_ext) is not list:
+                    fit_range_right_ext = [fit_range_right_ext]*len(parabola_coeffs)
 
     nonlinearity_at_q_ext = []
     for ext, parabola_coeff in enumerate(parabola_coeffs):
-        print('\n***********************************************************')
-        header = f'EXT {ext+1}:'
-        print(f'\n{header}\n')
-        if out_lines is not None:
-            out_lines.append('')
-            out_lines.append(header)
-            out_lines.append('')
+        if verbose:
+            print('\n***********************************************************')
+            header = f'EXT {ext+1}:'
+            print(f'\n{header}\n')
+            if out_lines is not None:
+                out_lines.append('')
+                out_lines.append(header)
+                out_lines.append('')
         parabola_pcov = parabola_pcovs[ext]
         fit_range_right = fit_range_right_ext[ext]
         nonlinearity_at_q = get_nonlinearity_at(q, parabola_coeff, parabola_pcov, fit_range_right, out_lines=out_lines)

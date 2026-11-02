@@ -10,7 +10,7 @@ def estimate_optimal_fit_range_right(peaks, centers, pedestal, gain,
                                      do_convert_to_electrons=False,
                                      fit_bounds_low=-100, fit_bounds_high=100,
                                      tolerance=None, max_charge_percentile=None,
-                                     min_peaks_in_fit=None):
+                                     min_peaks_in_fit=None, fix_intercept=True):
     """Sweep candidate fit_range_right values and return the one that minimizes var(a).
 
     Score is pcov[0, 0] from the parabola curve_fit — the variance of the leading
@@ -60,7 +60,8 @@ def estimate_optimal_fit_range_right(peaks, centers, pedestal, gain,
             _, pcov, _, _ = fit_nonlinearity(peaks, centers, pedestal, gain, float(candidate),
                                               do_convert_to_electrons=do_convert_to_electrons,
                                               fit_bounds_low=fit_bounds_low,
-                                              fit_bounds_high=fit_bounds_high)
+                                              fit_bounds_high=fit_bounds_high,
+                                              fix_intercept=fix_intercept)
         except (ValueError, RuntimeError, np.linalg.LinAlgError):
             continue
         score = pcov[0, 0]
@@ -86,7 +87,7 @@ def estimate_optimal_fit_range_right_ext(peaks_ext, centers_ext, pedestals, gain
                                           do_convert_to_electrons=False,
                                           fit_bounds_low=-100, fit_bounds_high=100,
                                           tolerance=None, max_charge_percentile=None,
-                                          min_peaks_in_fit=None, verbose=True):
+                                          min_peaks_in_fit=None, fix_intercept=True, verbose=True):
     n_ext = len(peaks_ext)
     if max_charges is None:
         max_charges = [None] * n_ext
@@ -101,7 +102,7 @@ def estimate_optimal_fit_range_right_ext(peaks_ext, centers_ext, pedestals, gain
             do_convert_to_electrons=do_convert_to_electrons,
             fit_bounds_low=fit_bounds_low, fit_bounds_high=fit_bounds_high,
             tolerance=tolerance, max_charge_percentile=max_charge_percentile,
-            min_peaks_in_fit=min_peaks_in_fit,
+            min_peaks_in_fit=min_peaks_in_fit, fix_intercept=fix_intercept,
         )
         result.append(opt)
         if verbose:
@@ -243,10 +244,36 @@ def estimate_fit_range_right_changepoint(peaks, centers, pedestal, gain,
     x = peak_charge_e
     y = np.array([peak_charge_e[i] - i for i in range(len(peaks))], dtype=float)
 
+    break_idx, debug = _changepoint_break_index(
+        x, y, win=win, baseline_pct=baseline_pct, factor=factor,
+        k=k, persist=persist, floor=floor)
+    if return_debug:
+        return float(x[break_idx]), debug
+    return float(x[break_idx])
+
+
+def _changepoint_break_index(x, y, win=25, baseline_pct=25, factor=4.0,
+                             k=4.0, persist=4, floor=0.15):
+    """Index of the first point where the clean parabola in (x, y) gives way to noise.
+
+    The detector proper, shared by every caller; see
+    ``estimate_fit_range_right_changepoint`` for what the two stages do. Both
+    stages difference out any linear *and* quadratic component of y -- stage 1
+    by fitting a local quadratic, stage 2 by fitting a parabola to the clean
+    prefix -- so a caller may pass any (x, y) whose clean part is parabolic:
+    charge vs charge-minus-peak-number in the production pipeline, peak number
+    vs the raw ADU charge spectrum in the gain-independent one.
+
+    ``floor`` is an absolute threshold in whatever units y carries.
+
+    Returns ``(break_idx, debug)``.
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
     n = len(x)
     half = int(win) // 2
     if n < win + persist + 4:
-        raise ValueError(f'Need at least {win + persist + 4} peaks for changepoint '
+        raise ValueError(f'Need at least {win + persist + 4} points for changepoint '
                          f'detection, got {n}')
 
     rough = _local_roughness(x, y, win)
@@ -270,11 +297,9 @@ def estimate_fit_range_right_changepoint(peaks, centers, pedestal, gain,
             break
     if coarse is None:
         # No sustained noise onset detected -> the curve is clean to the end.
-        if return_debug:
-            return float(x[-1]), dict(rough=rough, baseline=baseline, thr=thr,
-                                      coarse_idx=None, clean_end=None,
-                                      sigma_clean=None, res_thr=None, break_idx=n - 1)
-        return float(x[-1])
+        return n - 1, dict(rough=rough, baseline=baseline, thr=thr,
+                           coarse_idx=None, clean_end=None,
+                           sigma_clean=None, res_thr=None, break_idx=n - 1)
 
     # ---- Stage 2: precise onset refinement on guaranteed-clean points ----
     clean_end = max(coarse - half, 8)
@@ -292,12 +317,10 @@ def estimate_fit_range_right_changepoint(peaks, centers, pedestal, gain,
             break_idx = i
             break
 
-    if return_debug:
-        return float(x[break_idx]), dict(rough=rough, baseline=baseline, thr=thr,
-                                         coarse_idx=coarse, clean_end=clean_end,
-                                         sigma_clean=sigma_clean, res_thr=res_thr,
-                                         break_idx=break_idx)
-    return float(x[break_idx])
+    return break_idx, dict(rough=rough, baseline=baseline, thr=thr,
+                           coarse_idx=coarse, clean_end=clean_end,
+                           sigma_clean=sigma_clean, res_thr=res_thr,
+                           break_idx=break_idx)
 
 
 def estimate_fit_range_right_changepoint_ext(peaks_ext, centers_ext, pedestals, gains,
@@ -305,7 +328,7 @@ def estimate_fit_range_right_changepoint_ext(peaks_ext, centers_ext, pedestals, 
                                              win=25, baseline_pct=25, factor=4.0,
                                              k=4.0, persist=4, floor=0.15,
                                              cross_check=True, confidence_rel_tol=0.15,
-                                             verbose=True):
+                                             fix_intercept=True, verbose=True):
     """Per-extension changepoint estimate of fit_range_right.
 
     Returns ``(result, diagnostics)`` where ``result`` is the list of
@@ -334,6 +357,7 @@ def estimate_fit_range_right_changepoint_ext(peaks_ext, centers_ext, pedestals, 
                 va = estimate_optimal_fit_range_right(
                     peaks_ext[i], centers_ext[i], pedestals[i], gains[i],
                     do_convert_to_electrons=do_convert_to_electrons,
+                    fix_intercept=fix_intercept,
                 )
                 rel = abs(cp - va) / cp if cp else float('inf')
                 d['var_a_cross_check'] = va

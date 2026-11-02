@@ -1,67 +1,88 @@
 {
     "study_name": "VR-8_VDD",
-    "suptitle": null,
+    "suptitle": "VDD Scan at VR $= -8$V",
     "x_label": "VDD (V)",
     "invert_x": false,
     "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/meta_nonlinearity",
     "series_label": "VR (V)",
-    "series_separate_plot": true,
-    "ext_separate_plot": false,
-    "suppress_series_plot": false,
-    "series_line_styles": null,
+    "plot_individual": false,
+    "plot_quantities_together": true,
+    "plot_ext_together": false,
+    "plot_mega": false,
+    "plot_overlaid": false,
     "x_axis": "value",
     "colors": null,
-    "dpi": 350,
+    "dpi": 450,
+    "font_size": 24,
+    "together_legend_fontsize": 14,
+    "font_family": "CMU Serif",
+    "use_tex": true,
+    "inset_legend": false,
+    "series_separate_plot": false,
+    "ext_separate_plot": false,
     "show_plots": true,
     "save_output": true,
     "save_report": true,
-    "use_average": false,
+    "use_average": true,
     "show_multiple_values": true,
     "show_error_bars": false,
     "fit_line": false,
-    "connect_points": null,
+    "connect_points": true,
     "error_bar_line": true,
-    "plot_individual": true,
-    "plot_together": false,
-    "plot_mega": false,
-    "plot_overlaid": false,
-    "subplots_ncols": null,
+    "together_subplots_ncols": 2,
+    "individual_figsize": [10,7.5],
+    "together_subplots_figsize": [14,9],
+    "mega_subplots_figsize": [17,3],
     "series_column": null,
-    "series_markers": null,
+    "suppress_series_plot": true,
     "uniform_series_style": false,
+    "series_plot_styles": {
+                            "default":   {"linewidth": 1.5, "markersize": 12, "alpha": 0.8}
+    },
+    "plot_fit_line": false,
+    "fit_legend": false,
     "quantities": {
         "gain_adu_per_e": {
-            "ylabel": "Gain (ADU/e-)",
-            "title": "Gain vs VDD"
+            "ylabel": "Gain (ADU/$e^-$)",
+            "title": "",
+            "fit_line": true,
+            "fit_legend": true
         },
         "noise_e": {
-            "ylabel": "Noise (e-)",
-            "title": "Noise (e-) vs VDD"
+            "ylabel": "Noise ($e^-$)",
+            "title": "",
+            "fit_line": true,
+            "fit_legend": true
         },
         "noise_adu": {
             "ylabel": "Noise (ADU)",
-            "title": "Noise (ADU) vs VDD"
+            "title": "",
+            "exclude_quantity": true
         },
         "nonlinearity_at_500_e": {
-            "ylabel": "Nonlinearity at 500 e- (e-)",
-            "title": "Nonlinearity at 500 e- vs VDD"
+            "ylabel": "NL$(500~e^-)$ ($e^-$)",
+            "title": "",
+            "fit_line": true,
+            "fit_legend": true
         },
         "sigma_e_at_500_e": {
-            "ylabel": "Resolution sigma (e-)",
-            "title": "Resolution sigma at 500 e- vs VDD"
+            "ylabel": "$\\sigma(500~e^-)$ ($e^-$)",
+            "title": "",
+            "exclude_quantity": true
         },
         "sigma_e_at_1000_e": {
-            "ylabel": "Resolution sigma (e-)",
-            "title": "Resolution sigma at 1000 e- vs VDD",
-            "yscale": "log"
+            "ylabel": "$\\sigma(1000~e^-)$ ($e^-$)",
+            "title": "",
+            "connect_points": true,
+            "fit_line": true,
+            "ylim": [0.23, 0.345],
+            "fit_legend": true
         }
     },
     "datasets": [
         {"x": -19.0, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/VR-8_VDD-19/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_2c3a528d/extension_summary.csv"},
         {"x": -20.5, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/VR-8_VDD-20.5/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_039f906f/extension_summary.csv"},
         {"x": -21.5, "series": "-8", "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VDD_studies/ACM125_TC1/VR-8_VDD-21.5/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_10_stitched_1bb0ac72/extension_summary.csv"}
-    ],
-    "individual_figsize": [9,6.5],
-    "subplots_figsize": [16,9]
+    ]
 }
 

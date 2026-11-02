@@ -29,12 +29,11 @@ import sys
 import re
 import matplotlib.pyplot as plt
 
-plt.rcParams['font.size'] = 12  # bump default for axis labels, tick labels, legends
-
 # Overscan / fit-column / gain-seed plumbing is reused from pedestal_subtract rather
 # than re-implemented here: the coercion + per-extension normalization helpers live in
 # its CLI module, the FITS-header geometry readers in its core. Importing __main__ as a
 # submodule (not as the entry point) leaves its main() guarded and unexecuted.
+from analysis_tools.plot_charge_per_column import compute_hot_columns
 from pedestal_subtract.core import (
     overscan_cols_from_header,
     get_fits_header,
@@ -76,7 +75,10 @@ if __name__ == "__main__":
         pedestal_subtract_ext_cached,
         get_zero_one_peaks_ext,
         get_all_peaks_ext,
+        scale_buffers,
         get_nonlinearity_ext,
+        correct_nonlinearity_ext,
+        is_nl_corrected,
         estimate_optimal_fit_range_right_ext,
         estimate_fit_range_right_by_noise_onset_ext,
         estimate_fit_range_right_changepoint_ext,
@@ -97,7 +99,10 @@ else:
         pedestal_subtract_ext_cached,
         get_zero_one_peaks_ext,
         get_all_peaks_ext,
+        scale_buffers,
         get_nonlinearity_ext,
+        correct_nonlinearity_ext,
+        is_nl_corrected,
         estimate_optimal_fit_range_right_ext,
         estimate_fit_range_right_by_noise_onset_ext,
         estimate_fit_range_right_changepoint_ext,
@@ -122,6 +127,18 @@ def main(args=None):
     """
     if args is None:
         args = init_argparse()
+
+    # Uniform text size for everything except legends, which use legend_font_size.
+    plt.rcParams.update({'font.size': args.font_size, 'legend.fontsize': args.legend_font_size, 'legend.title_fontsize': args.legend_font_size,
+                         'axes.titlesize': args.font_size, 'axes.labelsize': args.font_size,
+                         'xtick.labelsize': args.font_size, 'ytick.labelsize': args.font_size,
+                         'text.usetex': args.use_tex})
+    # Same font handling as meta_studies: use_tex always means Computer Modern Roman and
+    # overrides font_family.
+    if args.use_tex:
+        plt.rcParams.update({'font.family': 'serif', 'font.serif': ['Computer Modern Roman']})
+    elif args.font_family:
+        plt.rcParams.update({'font.family': args.font_family, 'axes.unicode_minus': False})
 
     # If a non-empty extra_plot_title doesn't already end with a separator,
     # append a newline so it sits on its own line above the default title.
@@ -187,8 +204,10 @@ def main(args=None):
     if get_nonlinearity_at_charges is not None:
         get_nonlinearity_at_charges = _normalize_scalar_or_list(get_nonlinearity_at_charges)
     
-    # Right bound for parabolic fit: accepts an int, a list of ints (one per extension),
-    # or the literal 'auto' to invoke the data-driven estimator (see estimate_optimal_fit_range_right_ext).
+    # Right bound for parabolic fit: accepts an int, the literal 'auto' to invoke the
+    # data-driven estimator (see --auto_fit_range_method), or a list with one int or
+    # 'auto' per extension. In a mixed list the estimator runs on every extension and
+    # the ints then override it (fit_range_right_spec keeps what the user asked for).
     def _contains_auto(v):
         if isinstance(v, str):
             return v.lower() == 'auto'
@@ -196,10 +215,8 @@ def main(args=None):
             return any(_contains_auto(x) for x in v)
         return False
 
-    if _contains_auto(args.fit_range_right):
-        fit_range_right_ext = 'auto'
-    else:
-        fit_range_right_ext = _normalize_scalar_or_list(args.fit_range_right)
+    fit_range_right_spec = _normalize_scalar_or_list(args.fit_range_right)
+    fit_range_right_ext = 'auto' if _contains_auto(fit_range_right_spec) else fit_range_right_spec
 
     do_plot_nonlinearity = args.plot_nonlinearity_individual or args.plot_nonlinearity_together
     save_output = args.save_output
@@ -208,6 +225,7 @@ def main(args=None):
 
     stitched_dir_name = 'stitched-fits'
 
+    stitched_this_run = False
     if do_stitch_images:
         input_dir, input_pattern = _derive_data_path(args.file_string)
 
@@ -223,19 +241,21 @@ def main(args=None):
             # absolute, so it overrides stitch_fits's own file_path/out_path join.
             out_path = (_wildcard_free_base(args.file_string) / stitched_dir_name).resolve()
             stitched_file = stitch_fits(
-                input_dir.parent,
-                directory=input_dir.name,
-                image=input_pattern,
+                input_dir / input_pattern,
                 out_path=out_path,
                 print_header=verbose,
+                axis=args.stitch_fits_axis,
             )
             if stitched_file is None:
                 sys.exit(1)
             fits_file_path = Path(stitched_file)
+            stitched_this_run = True
     else:
         fits_file_path = file_path
 
-    if stitched_dir_name in fits_file_path.parts:
+    # Plots land next to the input file, except for files stitched in this run, which go
+    # to a 'plots' folder beside the 'stitched-fits' folder they were written into.
+    if stitched_this_run and stitched_dir_name in fits_file_path.parts:
         stitched_fits_idx = fits_file_path.parts.index(stitched_dir_name)
         base_path = Path(*fits_file_path.parts[:stitched_fits_idx])
         default_fig_path = base_path / 'plots'
@@ -309,7 +329,11 @@ def main(args=None):
 
     # If user specifies pedestal subtraction process, apply to all data before doing analysis
     # This will subtract the average baseline charge of specified axis (row/column) from that axis but keeps the data in ADU
-    if args.do_pedestal_subtraction:
+    # An NL-corrected image (NLCORR header flag) is already pedestal-subtracted and in
+    # electrons, so skip the pedestal pass and pin gain=1 after the zero/one fit below
+    # (re-fitting it would renormalize the 0->1 spacing and tilt the curve).
+    already_electrons = is_nl_corrected(fits_path)
+    if args.do_pedestal_subtraction and not already_electrons:
         data_ext = pedestal_subtract_ext_cached(
             data_ext,
             source_path=fits_file_path,
@@ -345,15 +369,16 @@ def main(args=None):
             print(f'Restricting the fit columns per extension: spec={fit_cols_spec}, '
                   f'kept_columns={kept}')
 
+    if not isinstance(fit_range_right_spec, list):
+        fit_range_right_spec = [fit_range_right_spec] * len(data_ext)
+    elif len(fit_range_right_spec) != len(data_ext):
+        print(
+            f'\nError: fit_range_right must be a single value (a number or "auto") or one '
+            f'value per extension ({len(data_ext)} values for this file).\n'
+        )
+        sys.exit(1)
     if fit_range_right_ext != 'auto':
-        if not isinstance(fit_range_right_ext, list):
-            fit_range_right_ext = [fit_range_right_ext] * len(data_ext)
-        elif len(fit_range_right_ext) != len(data_ext):
-            print(
-                f'\nError: fit_range_right must be a single value, one value per extension '
-                f'({len(data_ext)} values for this file), or the literal "auto".\n'
-            )
-            sys.exit(1)
+        fit_range_right_ext = fit_range_right_spec
 
     # Extract number of stitched images from filename; --nimages arg or config overrides.
     # A single, unstitched image carries no count in its name -> it is exactly one image.
@@ -376,15 +401,29 @@ def main(args=None):
             plot_together=args.plot_charge_per_column_together,
             plot_individual=args.plot_charge_per_column_individual,
             additional_title=args.extra_plot_title,
+            suptitle='Median Charge per Column' if args.default_titles else None,
             show_titles=args.show_titles,
             nimages=nimages,
             verbose=verbose,
+            col_offset=int(get_fits_header(fits_path).get('NCOLPRE', 0)),
             save_plots=save_output,
             show_plots=args.show_plots,
             fig_path=str(fig_path),
             file=image_name,
             dpi=350,
         )
+        # Columns surviving the n_std_to_mask cut (the non-hot ones, i.e. not drawn red), then
+        # the columns actually used in the fit and which setting (fit_cols or the cut) set them.
+        n_total = [np.asarray(d).shape[1] for d in raw_data_ext]
+        n_cut = [int((~h).sum()) for h in compute_hot_columns(raw_data_ext, args.n_std_to_mask)]
+        n_fit = [t if m is None else int(m.sum()) for m, t in zip(fit_cols_ext, n_total)]
+        for ext, spec in enumerate(fit_cols_spec):
+            src = ('n_std_to_mask cut' if spec == 'auto' else
+                   'all columns (fit_cols not set)' if spec is None else f'fit_cols={spec}')
+            print(f'Extension {ext}: {n_cut[ext]}/{n_total[ext]} columns '
+                  f'({100 * n_cut[ext] / n_total[ext]:.1f}%) survive the n_std_to_mask='
+                  f'{args.n_std_to_mask} cut; {n_fit[ext]}/{n_total[ext]} columns '
+                  f'({100 * n_fit[ext] / n_total[ext]:.1f}%) used in the double gaussian fit [{src}]')
 
     if verbose and args.zero_one_gain_guess is not None:
         # Show the per-extension gain seeds actually applied (resolved with the same
@@ -400,12 +439,14 @@ def main(args=None):
         fit_bounds='default',
         window_left_scale=args.zero_one_window_left_scale,
         window_right_scale=args.zero_one_window_right_scale,
-        gain_seed=args.zero_one_gain_guess,
+        gain_seed=1.0 if already_electrons else args.zero_one_gain_guess,
     )
+    if already_electrons:
+        gains = [1.0] * len(gains)
 
     # Extend the all-peaks histogram if a resolution charge sits near/above the
     # default right edge, so the [q - n/2, q + n/2] window is fully covered.
-    all_peaks_range_right = 1500
+    all_peaks_range_right = args.peak_finder_range_right
     if args.resolution_at is not None:
         res_charges = args.resolution_at if isinstance(args.resolution_at, list) else [args.resolution_at]
         needed = max(res_charges) + args.resolution_window / 2.0 + 50
@@ -416,7 +457,9 @@ def main(args=None):
     # so peak statistics aren't limited to whatever subset of columns fit_cols selected.
     counts_ext, edges_ext, peaks_ext, centers_ext, hist_ranges, data_electrons_ext = get_all_peaks_ext(full_data_ext,
                                                                                 widths=args.peak_finder_widths,
-                                                                                buffers=args.peak_finder_buffers,
+                                                                                buffers=scale_buffers(args.peak_finder_buffers,
+                                                                                                      args.nonlinearity_peakfinder_bin_factor,
+                                                                                                      len(full_data_ext)),
                                                                                 prominences=args.peak_finder_prominences,
                                                                                 pedestals=pedestals,
                                                                                 double_gauss_popts=double_gauss_popts,
@@ -455,6 +498,7 @@ def main(args=None):
                 tolerance=args.auto_fit_range_tolerance,
                 max_charge_percentile=args.auto_fit_range_max_charge_percentile,
                 min_peaks_in_fit=args.auto_fit_range_min_peaks_in_fit,
+                fix_intercept=args.nonlinearity_fit_fix_intercept,
                 verbose=verbose,
             )
         else:  # 'changepoint' (default)
@@ -468,6 +512,7 @@ def main(args=None):
                 win=args.changepoint_window, factor=args.changepoint_factor,
                 floor=args.changepoint_floor, persist=args.changepoint_persist,
                 confidence_rel_tol=args.fit_range_confidence_tol,
+                fix_intercept=args.nonlinearity_fit_fix_intercept,
                 verbose=verbose,
             )
             low = [d['ext'] for d in fit_range_diagnostics if d.get('confidence') == 'LOW']
@@ -475,6 +520,15 @@ def main(args=None):
                 print(f'  WARNING: low-confidence fit_range_right on EXT {low} '
                       f'(changepoint and var(a) disagree by > {args.fit_range_confidence_tol*100:.0f}%); '
                       f'inspect the nonlinearity plot(s).')
+
+        # Numbers given alongside 'auto' win over the estimate for their extension.
+        for ext, spec in enumerate(fit_range_right_spec):
+            if not _contains_auto(spec):
+                fit_range_right_ext[ext] = spec
+                if fit_range_diagnostics is not None:
+                    fit_range_diagnostics[ext].update(fit_range_right=spec, method='manual')
+                if verbose:
+                    print(f'EXT {ext+1}: using the user-set fit_range_right = {spec} e-')
 
     # Persist the auto-estimate diagnostics (incl. per-extension confidence) so a
     # saved run records which extensions need review.
@@ -501,8 +555,21 @@ def main(args=None):
                                                                                         gains, 
                                                                                         fit_range_right_ext, 
                                                                                         do_convert_to_electrons=False,
-                                                                                        fit_bounds_low=-100, 
-                                                                                        fit_bounds_high=100)
+                                                                                        fit_bounds_low=-100,
+                                                                                        fit_bounds_high=100,
+                                                                                        fix_intercept=args.nonlinearity_fit_fix_intercept,
+                                                                                        known_points=args.nonlinearity_fit_known_points)
+    # same fit without the known points, drawn as a comparison curve on the nonlinearity plots
+    parabola_coeffs_no_known = None
+    if args.nonlinearity_fit_known_points:
+        parabola_coeffs_no_known = get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_right_ext,
+                                                        do_convert_to_electrons=False, fit_bounds_low=-100, fit_bounds_high=100,
+                                                        fix_intercept=args.nonlinearity_fit_fix_intercept)[2]
+
+    if args.correct_nonlinearity:
+        _, nl_corrected_path = correct_nonlinearity_ext(full_data_ext, pedestals, gains, parabola_coeffs, fits_file_path, fig_path,
+                                                         data_nl=charge_minus_npeak_ext if args.nonlinearity_correction_model == 'data' else None)
+        print(f'Saved nonlinearity-corrected image (e-) to {nl_corrected_path}')
 
     # Single-electron resolution at the requested charge(s): fit a constrained
     # n-Gaussian comb in a window around each q and report sigma (e-), reduced
@@ -579,7 +646,7 @@ def main(args=None):
                             ylim_electrons=args.plot_zero_one_ylim_electrons,
                             electron_fit_mode=args.electron_fit_mode or 'transform',
                             additional_title=f'{args.extra_plot_title}' if args.extra_plot_title else '',
-                            suptitle='Double-Gaussian Fit to Zero-One Electron Peaks',
+                            suptitle='Calibration Fit to Zero-One Peaks' if args.default_titles else None,
                             nimages=nimages,
                             yscale=args.plot_zero_one_yscale,
                             fontsize=12,
@@ -615,21 +682,21 @@ def main(args=None):
                     yscale=args.plot_all_peaks_yscale,
                     data_ext=data_electrons_ext,
                     window_bin_factor=args.plot_all_peaks_window_bin_factor,
+                    peakfinder_bin_factor=args.nonlinearity_peakfinder_bin_factor,
                     plot_individual=args.plot_all_peaks_individual,
                     plot_together=args.plot_all_peaks_together,
                     sharex=args.plot_all_peaks_sharex,
                     sharey=args.plot_all_peaks_sharey,
                     show_titles=args.show_titles,
-                    draw_lines=True,
+                    raw_peak_location_vertical_line=args.raw_peak_location_vertical_line,
                     linecolor='r',
                     linestyle='--',
-                    peak_number_labels_individual=args.peak_number_labels_individual,
-                    peak_number_labels_together=args.peak_number_labels_together,
-                    peak_number_label_size=args.peak_number_label_size,
+                    raw_peak_number=args.raw_peak_number,
+                    peak_number_labels_size=args.peak_number_labels_size,
                     individual_figsize=tuple(args.plot_all_peaks_individual_figsize),
                     subplots_figsize=tuple(args.plot_all_peaks_subplots_figsize),
                     additional_title=args.extra_plot_title,
-                    suptitle='Peaks in Pixel Charge Distribution',
+                    suptitle='Pixel Charge Peak-Finder' if args.default_titles else None,
                     nimages=nimages,
                     save_plots=save_output,
                     show_plots=args.show_plots,
@@ -646,7 +713,7 @@ def main(args=None):
             individual_figsize=tuple(args.plot_resolution_individual_figsize),
             subplots_figsize=tuple(args.plot_resolution_subplots_figsize),
             additional_title=args.extra_plot_title,
-            suptitle='Single-Electron Resolution',
+            suptitle='Single-Electron Resolution' if args.default_titles else None,
             nimages=nimages,
             sigma_well=args.resolution_sigma_well,
             sigma_limit=args.resolution_sigma_limit,
@@ -673,12 +740,14 @@ def main(args=None):
                         individual_figsize=tuple(args.plot_nonlinearity_individual_figsize),
                         subplots_figsize=tuple(args.plot_nonlinearity_subplots_figsize),
                         additional_title=args.extra_plot_title,
-                        suptitle='Pixel Charge Nonlinearity',
+                        suptitle='Nonlinearity Curve' if args.default_titles else None,
                         nimages=nimages,
                         line_color='r',
                         scatter_color='b',
-                        s=2,
+                        s=6,
                         alpha=1,
+                        known_points=args.nonlinearity_fit_known_points,
+                        parabola_coeffs_no_known=parabola_coeffs_no_known,
                         plot_individual=args.plot_nonlinearity_individual,
                         plot_together=args.plot_nonlinearity_together,
                         sharex=args.plot_nonlinearity_sharex,
@@ -728,6 +797,9 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("-f", "--stitch_fits", action="store_true",
                        default=_config_default(config, 'stitch_fits', False),
                        help="Stitch FITS files by extension")
+    parser.add_argument("--stitch_fits_axis", choices=["vertical", "horizontal"],
+                       default=_config_default(config, 'stitch_fits_axis', 'vertical'),
+                       help="Axis to stitch along when --stitch_fits is on: 'vertical' (stack along y) or 'horizontal' (stack along x)")
     parser.add_argument("--no-stitch_fits", dest="stitch_fits", action="store_false",
                        help="Disable FITS stitching when enabled by JSON config")
     parser.add_argument("--plot_charge_per_column_together", action="store_true",
@@ -840,18 +912,21 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("--peak_finder_widths", nargs='+', type=float,
                        default=_config_default(config, 'peak_finder_widths', [0.1, 0.1, 0.1, 0.1]),
                         help="Minimum peak width required by scipy.signal.find_peaks, in units of electrons (internally multiplied by nonlinearity_peakfinder_bin_factor to convert to bins). Scalar (applied to all extensions) or one value per extension. Higher = stricter filter on narrow noise spikes.")
-    parser.add_argument("--peak_finder_buffers", nargs='+', type=int,
-                       default=_config_default(config, 'peak_finder_buffers', [3, 3, 3, 3]),
-                        help="Buffer (in bins), SUBTRACTED from nonlinearity_peakfinder_bin_factor to compute the minimum neighbor-peak distance: d = nonlinearity_peakfinder_bin_factor - buffer. With nonlinearity_peakfinder_bin_factor=10: buffer=0 -> 10 bins (1 e- spacing, physical), buffer=3 -> 7 bins (~0.7 e-, loose), buffer=-2 -> 12 bins (1.2 e-, strict). Larger buffer = looser, smaller/negative = stricter.")
+    parser.add_argument("--peak_finder_buffers", nargs='+', type=float,
+                       default=_config_default(config, 'peak_finder_buffers', [3.0, 3.0, 3.0, 3.0]),
+                        help="Buffer (in bins), SUBTRACTED from nonlinearity_peakfinder_bin_factor to compute the minimum neighbor-peak distance: d = nonlinearity_peakfinder_bin_factor - buffer. Quoted NORMALIZED to 10 bins/e- and scaled to the binning actually in use (buffer * nonlinearity_peakfinder_bin_factor / 10), so retuning the bin factor keeps the same physical spacing and the same number means the same thing in the gain-independent module. At 10 bins/e-: buffer=0 -> 10 bins (1 e- spacing, physical), buffer=3 -> 7 bins (~0.7 e-, loose), buffer=-2 -> 12 bins (1.2 e-, strict). Larger buffer = looser, smaller/negative = stricter. Fractional values are allowed.")
     parser.add_argument("--peak_finder_prominences", nargs='+', type=float,
                        default=_config_default(config, 'peak_finder_prominences', None),
                         help="Minimum peak prominence required by scipy.signal.find_peaks, in histogram counts (same units as the y-axis of plot_all_peaks). Scalar or one value per extension. None disables the filter. Larger = stricter. Often the most robust filter for separating real electron peaks from noise.")
     parser.add_argument("--nonlinearity_peakfinder_bin_factor", type=int,
                        default=_config_default(config, 'nonlinearity_peakfinder_bin_factor', 10),
                         help="Number of histogram bins per electron used in the all-peaks histogram. Also controls peak_finder_widths conversion (electrons -> bins) and the buffer math (distance = nonlinearity_peakfinder_bin_factor - buffer). Higher = finer resolution but more sensitive to noise.")
+    parser.add_argument("--peak_finder_range_right", type=int,
+                       default=_config_default(config, 'peak_finder_range_right', 1500),
+                        help="Right edge (in electrons) of the all-peaks histogram the peak finder runs on. Peak n sits near n e-, so this is roughly the maximum number of peaks found. Raised automatically if --resolution_at needs more headroom.")
     parser.add_argument("--fit_range_right", nargs='+', type=_int_or_auto,
                        default=_config_default(config, 'fit_range_right', 'auto'),
-                        help="Right charge bound (in electrons) for the parabolic nonlinearity fit. Accepts: a single int applied to all extensions (e.g. 500), one int per extension (e.g. 600 850 750 1050), or the literal 'auto' to enable the data-driven estimator that picks the value minimizing var(a) of the parabola fit per extension.")
+                        help="Right charge bound (in electrons) for the parabolic nonlinearity fit. Accepts: a single int applied to all extensions (e.g. 500), one int per extension (e.g. 600 850 750 1050), or the literal 'auto' to pick it per extension with the data-driven estimator (see --auto_fit_range_method). 'auto' can also stand in for individual extensions in a per-extension list (e.g. auto 685 auto auto), leaving the ints as given.")
     parser.add_argument("--auto_fit_range_tolerance", type=float,
                        default=_config_default(config, 'auto_fit_range_tolerance', None),
                         help="(Only with --fit_range_right auto) If set, among candidates whose score is within (1+tolerance)*min_score, pick the smallest charge. Prevents overestimation when the covariance curve is flat/noisy. E.g. 0.10 = 10%%.")
@@ -861,6 +936,20 @@ You can enable any combination of steps using flags below.""",
     parser.add_argument("--auto_fit_range_min_peaks_in_fit", type=int,
                        default=_config_default(config, 'auto_fit_range_min_peaks_in_fit', None),
                         help="(Only with --fit_range_right auto) If set, reject candidate fit_range_right values that include fewer than this many peaks below them. Prevents picking absurdly small ranges.")
+    parser.add_argument("--nonlinearity_fit_fix_intercept", action="store_true",
+                        default=_config_default(config, 'nonlinearity_fit_fix_intercept', True),
+                        help="Hold the nonlinearity parabola's constant term at 0, which Nonlin(0) = 0 requires by construction. Left free it absorbs the misfit of a parabola against a curve that stops being quadratic before fit_range_right, offsetting the fitted curve from the data at low peak numbers.")
+    parser.add_argument("--no-nonlinearity_fit_fix_intercept", dest="nonlinearity_fit_fix_intercept", action="store_false",
+                        help="Fit the constant term as a free parameter (the pre-fix behavior).")
+    parser.add_argument("--nonlinearity_fit_known_points", nargs='+', type=float,
+                        default=_config_default(config, 'nonlinearity_fit_known_points', None),
+                        help="Known nonlinearity values to include in the parabola fit alongside the peaks up to fit_range_right, as flat charge nonlinearity pairs in electrons (e.g. 1000 3.2 1500 5.1), or [[1000, 3.2], [1500, 5.1]] in a config file. Applied to every extension. Default: none.")
+    parser.add_argument("--nonlinearity_correction_model", choices=["parabola", "data"],
+                        default=_config_default(config, 'nonlinearity_correction_model', 'parabola'),
+                        help="NL(q) used by --correct_nonlinearity: 'parabola' (fitted model) or 'data' (measured charge-minus-peak-number at the integer electron value nearest each pixel's charge).")
+    parser.add_argument("--correct_nonlinearity", action="store_true",
+                        default=_config_default(config, 'correct_nonlinearity', False),
+                        help="Subtract the fitted nonlinearity from every pixel (q_true = q - NL(q)) and save the corrected image, in electrons, in the run's hash output folder as NL_corrected_<file_name>.fits.")
     parser.add_argument("--auto_fit_range_method", type=str,
                         default=_config_default(config, 'auto_fit_range_method', 'changepoint'),
                         choices=['changepoint', 'var_a', 'noise_onset'],
@@ -1076,6 +1165,12 @@ You can enable any combination of steps using flags below.""",
                         help="Show suptitles and per-axis titles on all plots")
     parser.add_argument("--no-show_titles", dest="show_titles", action="store_false",
                         help="Hide all suptitles and per-axis titles")
+    parser.add_argument("--default_titles", action="store_true",
+                        default=_config_default(config, 'default_titles', True),
+                        help="Include the default plot title text; when off, titles are just "
+                             "the extra plot title, Nimages and the extension")
+    parser.add_argument("--no-default_titles", dest="default_titles", action="store_false",
+                        help="Replace default plot titles with '<extra_plot_title> (Nimages = N): EXT n'")
     parser.add_argument("--plot_zero_one_sharex", action="store_true",
                         default=_config_default(config, 'plot_zero_one_sharex', True),
                         help="Share x-axis range across the 2x2 zero/one peak subplots")
@@ -1101,18 +1196,32 @@ You can enable any combination of steps using flags below.""",
                         help="Share y-axis range across the 2x2 all-peaks subplots")
     parser.add_argument("--no-plot_all_peaks_sharey", dest="plot_all_peaks_sharey", action="store_false",
                         help="Allow independent y-axis ranges per all-peaks subplot")
-    parser.add_argument("--peak_number_labels_individual", action="store_true",
-                        default=_config_default(config, 'peak_number_labels_individual', True),
-                        help="Annotate each detected peak with its index (0, 1, 2, ...) on the individual all-peaks plots")
-    parser.add_argument("--no-peak_number_labels_individual", dest="peak_number_labels_individual", action="store_false",
-                        help="Hide per-peak index annotations on the individual all-peaks plots")
-    parser.add_argument("--peak_number_labels_together", action="store_true",
-                        default=_config_default(config, 'peak_number_labels_together', True),
-                        help="Annotate each detected peak with its index (0, 1, 2, ...) on the 2x2 together all-peaks subplot")
-    parser.add_argument("--no-peak_number_labels_together", dest="peak_number_labels_together", action="store_false",
-                        help="Hide per-peak index annotations on the 2x2 together all-peaks subplot")
-    parser.add_argument("--peak_number_label_size", type=float,
-                        default=_config_default(config, 'peak_number_label_size', 8),
+    parser.add_argument("--raw_peak_number", action="store_true",
+                        default=_config_default(config, 'raw_peak_number', True),
+                        help="Annotate each detected peak with its index (0, 1, 2, ...) at its raw bin-center location, on every all-peaks plot")
+    parser.add_argument("--no-raw_peak_number", dest="raw_peak_number", action="store_false",
+                        help="Hide per-peak index annotations on the all-peaks plots")
+    parser.add_argument("--raw_peak_location_vertical_line", action="store_true",
+                        default=_config_default(config, 'raw_peak_location_vertical_line', True),
+                        help="Draw a vertical line at each detected peak's raw bin-center location, on every all-peaks plot")
+    parser.add_argument("--no-raw_peak_location_vertical_line", dest="raw_peak_location_vertical_line", action="store_false",
+                        help="Hide the raw bin-center vertical lines on the all-peaks plots")
+    parser.add_argument("--font_size", type=float,
+                        default=_config_default(config, 'font_size', 12),
+                        help="Size of all plot text (titles, axis labels, ticks, annotations) except legends")
+    parser.add_argument("--legend_font_size", type=float,
+                        default=_config_default(config, 'legend_font_size', 10),
+                        help="Size of all legend text")
+    parser.add_argument("--font_family", type=str,
+                        default=_config_default(config, 'font_family', None),
+                        help="Matplotlib font family (e.g. 'CMU Serif'); ignored when --use_tex is set")
+    parser.add_argument("--use_tex", action="store_true",
+                        default=_config_default(config, 'use_tex', False),
+                        help="Render all plot text with LaTeX")
+    parser.add_argument("--no-use_tex", dest="use_tex", action="store_false",
+                        help="Render plot text with matplotlib's mathtext")
+    parser.add_argument("--peak_number_labels_size", type=float,
+                        default=_config_default(config, 'peak_number_labels_size', 8),
                         help="Font size for the per-peak index annotations on the all-peaks plot")
     parser.add_argument("--plot_nonlinearity_sharey", action="store_true",
                         default=_config_default(config, 'plot_nonlinearity_sharey', True),

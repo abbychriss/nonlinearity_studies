@@ -61,6 +61,7 @@ def _wildcard_free_base(pattern_str):
 CONFIG_KEYS = {
     'file_string',
     'stitch_fits',
+    'stitch_fits_axis',
     'plot_charge_per_column_together',
     'plot_charge_per_column_individual',
     'plot_charge_per_column_figsize',
@@ -91,7 +92,13 @@ CONFIG_KEYS = {
     'peak_finder_buffers',
     'peak_finder_prominences',
     'nonlinearity_peakfinder_bin_factor',
+    'peak_finder_range_right',
+    'sub_bin_peakfinder_bin_factor',
     'fit_range_right',
+    'nonlinearity_fit_fix_intercept',
+    'nonlinearity_fit_known_points',
+    'correct_nonlinearity',
+    'nonlinearity_correction_model',
     'auto_fit_range_tolerance',
     'auto_fit_range_max_charge_percentile',
     'auto_fit_range_min_peaks_in_fit',
@@ -138,15 +145,68 @@ CONFIG_KEYS = {
     'plot_zero_one_ylim_electrons',
     'electron_fit_mode',
     'show_titles',
+    'default_titles',
     'plot_zero_one_sharex',
     'plot_all_peaks_sharex',
     'plot_nonlinearity_sharex',
     'plot_zero_one_sharey',
     'plot_all_peaks_sharey',
-    'peak_number_labels_individual',
-    'peak_number_labels_together',
-    'peak_number_label_size',
+    'raw_peak_number',
+    'raw_peak_location_vertical_line',
+    'sub_bin_peak_number',
+    'sub_bin_peak_location_vertical_line',
+    'peak_number_labels_size',
+    'font_size',
+    'legend_font_size',
+    'font_family',
+    'use_tex',
     'plot_nonlinearity_sharey',
+    'plot_gain_indep_nonlin_individual',
+    'plot_gain_indep_nonlin_together',
+    'plot_gain_indep_nonlin_individual_figsize',
+    'plot_gain_indep_nonlin_together_figsize',
+    'plot_gain_indep_nonlin_sharex',
+    'plot_gain_indep_nonlin_sharey',
+    'sub_bin_half_width',
+    'sub_bin_min_good_bins',
+    'gaussian_peakfind_fallback',
+    'gaussian_refit_k_sigma',
+    'gain_indep_fit_n_min',
+    'gain_indep_fit_n_max',
+    'gain_indep_avg_gain_n_min',
+    'gain_indep_avg_gain_n_max',
+    'gain_indep_fit_cubic',
+    'gain_indep_gain_scan',
+    'gain_indep_scan_fit_range_right',
+    'gain_indep_scan_eval_charge',
+    'gain_indep_scan_stride',
+    'gain_indep_compare_test_i',
+    'plot_charge_spectrum_fit_individual',
+    'plot_charge_spectrum_fit_together',
+    'plot_charge_spectrum_individual',
+    'plot_charge_spectrum_together',
+    'plot_cumulative_delta_individual',
+    'plot_cumulative_delta_together',
+    'plot_cumulative_dir_delta_individual',
+    'plot_cumulative_dir_delta_together',
+    'plot_running_gain_individual',
+    'plot_running_gain_together',
+    'plot_gain_fit_residual_individual',
+    'plot_gain_fit_residual_together',
+    'plot_gain_fit_residual_cumsum_individual',
+    'plot_gain_fit_residual_cumsum_together',
+    'plot_direct_gain_individual',
+    'plot_direct_gain_together',
+    'plot_direct_delta_individual',
+    'plot_direct_delta_together',
+    'plot_gain_scan_individual',
+    'plot_gain_scan_together',
+    'plot_compare_nonlinearity_curves_individual',
+    'plot_compare_nonlinearity_curves_together',
+    'plot_alpha_alpha_prime_individual',
+    'plot_alpha_alpha_prime_together',
+    'plot_nonlin_vs_gain_individual',
+    'plot_nonlin_vs_gain_together',
 }
 
 
@@ -204,6 +264,13 @@ def _int_or_auto(s):
     if isinstance(s, str) and s.lower() == 'auto':
         return 'auto'
     return int(s)
+
+
+def _float_or_auto(s):
+    """argparse type that accepts a float or the literal string 'auto'."""
+    if isinstance(s, str) and s.lower() == 'auto':
+        return 'auto'
+    return float(s)
 
 
 def _lim_token(s):

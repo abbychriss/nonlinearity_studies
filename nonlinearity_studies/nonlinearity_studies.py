@@ -30,6 +30,7 @@ from pedestal_subtract.core import (
 )
 from .fit_data import (
     find_all_peaks,
+    scale_buffers,
     fit_nonlinearity,
     _gauss_single,
     _make_comb_model,
@@ -50,6 +51,7 @@ from .nonlinearity import (
     get_nonlinearity_ext,
     get_nonlinearity_at_ext,
 )
+from .nonlinearity_correction import correct_nonlinearity_ext, is_nl_corrected
 from .resolution import (
     _resolution_poisson_weights,
     _resolution_reduced_chi2,
@@ -104,6 +106,8 @@ __all__ = [
     "get_all_peaks_ext",
     "get_nonlinearity_ext",
     "get_nonlinearity_at_ext",
+    "correct_nonlinearity_ext",
+    "is_nl_corrected",
     "_resolution_poisson_weights",
     "_resolution_reduced_chi2",
     "_resolution_poisson_deviance",

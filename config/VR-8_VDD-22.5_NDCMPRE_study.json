@@ -11,13 +11,14 @@
     "suppress_series_plot": false,
     "uniform_series_style": false,
     "plot_individual": true,
-    "plot_together": true,
+    "plot_quantities_together": true,
+    "plot_ext_together": false,
     "plot_mega": false,
     "plot_overlaid": false,
     "show_plots": true,
     "save_output": true,
     "save_report": true,
-    "together_subplot_ncols": 3,
+    "together_subplots_ncols": 3,
     "fit_line": false,
     "connect_points": true,
     "individual_figsize": [9,7],
@@ -28,8 +29,16 @@
     "show_multiple_values": true,
     "show_error_bars": false,
     "error_bar_line": true,
-    "series_line_styles": ["", "-"],
-    "series_markers": ["^", "o"],
+    "series_plot_styles": [
+        {
+            "linestyle": "",
+            "marker": "^"
+        },
+        {
+            "linestyle": "-",
+            "marker": "o"
+        }
+    ],
     "quantities": {
         "noise_adu": {
             "ylabel": "Noise (ADU)",

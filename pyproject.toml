@@ -46,6 +46,7 @@ dev = [
 
 [project.scripts]
 run-nonlinearity-studies = "nonlinearity_studies.run_nonlinearity_studies:main"
+gain-independent-nonlinearity = "nonlinearity_studies.gain_independent_nonlinearity.run:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

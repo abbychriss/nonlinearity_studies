@@ -4,7 +4,8 @@
     "invert_x": false,
     "output_dir": "./examples/VR-6_deltaV_meta",
     "series_label": "VR",
-    "plot_together": true,
+    "plot_quantities_together": true,
+    "plot_ext_together": false,
     "series_same_plot": true,
     "quantities": {
         "gain_adu_per_e": {

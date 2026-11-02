@@ -7,7 +7,8 @@
     "series_label": "deltaV",
     "series_same_plot": true,
     "suppress_series_plot": false,
-    "plot_together": true,
+    "plot_quantities_together": true,
+    "plot_ext_together": false,
     "plot_mega": false,
     "plot_overlaid": false,
     "invert_x": false,
@@ -26,8 +27,7 @@
     "ext_separate_plot": false,
     "subplots_ncols": null,
     "series_column": null,
-    "series_line_styles": null,
-    "series_markers": null,
+    "series_plot_styles": null,
     "uniform_series_style": false,
     "quantities": {
         "gain_adu_per_e": {

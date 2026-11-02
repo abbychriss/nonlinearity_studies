@@ -8,7 +8,8 @@
     "series_same_plot": false,
     "suppress_series_plot": false,
     "uniform_series_style": true,
-    "plot_together": false,
+    "plot_quantities_together": false,
+    "plot_ext_together": false,
     "plot_mega": false,
     "plot_overlaid": false,
     "x_axis": "value",
@@ -26,8 +27,7 @@
     "plot_individual": true,
     "ext_separate_plot": false,
     "subplots_ncols": null,
-    "series_line_styles": null,
-    "series_markers": null,
+    "series_plot_styles": null,
     "quantities": {
         "sigma_e_at_500_e": {
             "ylabel": "Resolution sigma (e-)",

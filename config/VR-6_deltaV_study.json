@@ -1,64 +1,71 @@
 {
     "study_name": "VR-6_deltaV",
-    "suptitle": null,
-    "x_label": "deltaV from nominal",
+    "suptitle": "Skipper Clock DeltaV Comparison at VR $= -6$V",
+    "x_label": "$\\delta_H$ (V)",
     "invert_x": false,
     "output_dir": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/meta_VR-6_deltaV_nonlinearity_meta",
     "series_label": "VR (V)",
-    "plot_together": true,
+    "plot_individual": false,
+    "plot_quantities_together": false,
+    "plot_ext_together": false,
+    "plot_overlaid": true,
     "plot_mega": false,
-    "plot_overlaid": false,
-    "series_separate_plot": true,
-    "suppress_series_plot": false,
-    "x_axis": "value",
-    "colors": null,
-    "dpi": 350,
+    "font_size": 24,
+    "together_legend_fontsize": 14,
+    "font_family": "CMU Serif",
+    "use_tex": true,
+    "inset_legend": true,
+    "series_separate_plot": false,
+    "ext_separate_plot": false,
     "show_plots": true,
     "save_output": true,
     "save_report": true,
-    "use_average": false,
+    "use_average": true,
     "show_multiple_values": true,
     "show_error_bars": false,
     "fit_line": false,
-    "connect_points": null,
+    "connect_points": true,
     "error_bar_line": true,
-    "plot_individual": true,
-    "ext_separate_plot": false,
-    "subplots_ncols": 3,
+    "together_subplots_ncols": 2,
+    "individual_figsize": [10,7.5],
+    "together_subplots_figsize": [14,9],
+    "mega_subplots_figsize": [17,3],
     "series_column": null,
-    "series_line_styles": null,
-    "series_markers": null,
+    "suppress_series_plot": true,
     "uniform_series_style": false,
+    "series_plot_styles": {
+                            "default":   {"linewidth": 1.5, "markersize": 12, "alpha": 0.8}
+    },
     "quantities": {
         "gain_adu_per_e": {
-            "ylabel": "Gain (ADU/e-)",
-            "title": "Gain vs deltaV"
+            "ylabel": "Gain (ADU/$e^-$)",
+            "title": ""
         },
         "noise_e": {
-            "ylabel": "Noise (e-)",
-            "title": "Noise (e-) vs deltaV"
+            "ylabel": "Noise ($e^-$)",
+            "title": ""
         },
         "noise_adu": {
             "ylabel": "Noise (ADU)",
-            "title": "Noise (ADU) vs deltaV"
+            "title": "",
+            "exclude_quantity": true
         },
         "nonlinearity_at_500_e": {
-            "ylabel": "Nonlinearity at 500 e- (e-)",
-            "title": "Nonlinearity at 500 e- vs deltaV"
+            "ylabel": "NL$(500~e^-)$ ($e^-$)",
+            "title": ""
         },
         "sigma_e_at_500_e": {
-            "ylabel": "$\\sigma$ at 500 e- (e-)",
-            "title": "Resolution at 500 e- vs deltaV"
+            "ylabel": "$\\sigma(500~e^-)$ ($e^-$)",
+            "title": "",
+            "exclude_quantity": true
         },
         "sigma_e_at_1000_e": {
-            "ylabel": "$\\sigma$ at 1000 e- (e-)",
-            "title": "Resolution at 1000 e- vs deltaV"
+            "ylabel": "$\\sigma(1000~e^-)$ ($e^-$)",
+            "title": ""
         }
     },
     "datasets": [
         {"x": 0, "series": -6, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-6/plots/avg_img_CV_250x3500x500_bin1x1_125_10_stitched_6af4b4d7/extension_summary.csv"},
         {"x": 3, "series": -6, "table": "/Users/abbychriss/Privitera_335/data/test_chamber/VR_studies/VR-6_Diego_params/plots/cds_avg_img_L2_250x3500x500_1x1_L2_125_11_stitched_faf34b1a/extension_summary.csv"}
-    ],
-    "individual_figsize": [9,6.5],
-    "subplots_figsize": [16,10]
+    ]
 }

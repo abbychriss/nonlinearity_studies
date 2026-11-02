@@ -5,7 +5,8 @@
     "output_dir": "./examples/VR-6_deltaV_meta",
     "series_label": "deltaV",
     "series_same_plot": true,
-    "plot_together": true,
+    "plot_quantities_together": true,
+    "plot_ext_together": false,
     "quantities": {
         "gain_adu_per_e": {
             "ylabel": "Gain (ADU/e-)",

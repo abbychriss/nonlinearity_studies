@@ -5,18 +5,21 @@
     "invert_x": true,
     "output_dir": null,
     "series_label": "deltaV",
-    "plot_together": true,
+    "plot_quantities_together": true,
+    "plot_ext_together": false,
     "plot_mega": false,
     "plot_overlaid": false,
     "series_same_plot": true,
     "suppress_series_plot": false,
-    "series_line_styles": {
-        "Standard": "-",
-        "Increased": "--"
-    },
-    "series_markers": {
-        "Standard": "o",
-        "Increased": "s"
+    "series_plot_styles": {
+        "Standard": {
+            "linestyle": "-",
+            "marker": "o"
+        },
+        "Increased": {
+            "linestyle": "--",
+            "marker": "s"
+        }
     },
     "x_axis": "value",
     "colors": null,

@@ -9,7 +9,8 @@
     "ext_separate_plot": false,
     "series_separate_plot": false,
     "plot_individual": true,
-    "plot_together": true,
+    "plot_quantities_together": true,
+    "plot_ext_together": false,
     "plot_mega": false,
     "plot_overlaid": false,
     "show_plots": true,
@@ -25,11 +26,19 @@
     "fit_line": false,
     "connect_points": true,
     "error_bar_line": true,
-    "together_subplot_ncols": 3,
+    "together_subplots_ncols": 3,
     "series_column": null,
     "suppress_series_plot": false,
-    "series_line_styles": ["-", ""],
-    "series_markers": ["o", "^"],
+    "series_plot_styles": [
+        {
+            "linestyle": "-",
+            "marker": "o"
+        },
+        {
+            "linestyle": "",
+            "marker": "^"
+        }
+    ],
     "uniform_series_style": false,
     "quantities": {
         "noise_adu": {
