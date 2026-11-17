@@ -51,8 +51,6 @@ import sys
 import re
 import matplotlib.pyplot as plt
 
-plt.rcParams['font.size'] = 12  # bump default for axis labels, tick labels, legends
-
 # Nominal ADU per electron. Used ONLY to convert the electron-valued peak-finder
 # knobs -- nonlinearity_peakfinder_bin_factor (bins/e-) and peak_finder_widths
 # (electrons) -- into the ADU units this module's histogram is in, so those knobs
@@ -101,6 +99,7 @@ from nonlinearity_studies.cli_config import (
     _run_hash,
     _parse_lim,
 )
+from nonlinearity_studies.plotting import set_plot_style
 from nonlinearity_studies.nonlinearity_studies import (
     get_fits,
     pedestal_subtract_ext_cached,
@@ -165,6 +164,8 @@ def main(args=None):
     if args is None:
         args = init_argparse()
 
+    set_plot_style(args.font_size, args.legend_font_size, args.use_tex, args.font_family)
+
     if args.extra_plot_title and not args.extra_plot_title.endswith((' ', '\n')):
         args.extra_plot_title = f'{args.extra_plot_title}\n'
 
@@ -221,11 +222,9 @@ def main(args=None):
         else:
             out_path = (_wildcard_free_base(args.file_string) / stitched_dir_name).resolve()
             stitched_file = stitch_fits(
-                input_dir.parent,
-                directory=input_dir.name,
-                image=input_pattern,
+                input_dir / input_pattern,
                 out_path=out_path,
-                print_header=verbose,
+                axis=args.stitch_fits_axis,
             )
             if stitched_file is None:
                 sys.exit(1)
@@ -327,7 +326,7 @@ def main(args=None):
 
     # Extract number of stitched images from filename; --nimages arg or config overrides.
     nimages = None
-    match = re.search(r'_(\d+)_stitched', fits_path)
+    match = re.search(r'_(\d+)_(?:vertical_|horizontal_)?stitched', fits_path)
     if match:
         nimages = int(match.group(1))
     elif stitched_dir_name not in fits_file_path.parts:
@@ -888,6 +887,9 @@ zero/one gain, and computes the gain-independent observables from it.""",
                        help="Stitch FITS files by extension")
     parser.add_argument("--no-stitch_fits", dest="stitch_fits", action="store_false",
                        help="Disable FITS stitching when enabled by JSON config")
+    parser.add_argument("--stitch_fits_axis", choices=["vertical", "horizontal"],
+                       default=_config_default(config, 'stitch_fits_axis', 'vertical'),
+                       help="Axis to stitch along when --stitch_fits is on: 'vertical' (stack along y) or 'horizontal' (stack along x)")
 
     parser.add_argument("-s", "--save_output", action="store_true",
                        default=_config_default(config, 'save_output', False),
@@ -1122,6 +1124,20 @@ zero/one gain, and computes the gain-independent observables from it.""",
                         help="Draw a vertical line at each detected peak's sub-bin location, on every all-peaks plot")
     parser.add_argument("--no-sub_bin_peak_location_vertical_line", dest="sub_bin_peak_location_vertical_line", action="store_false",
                         help="Hide the sub-bin vertical lines")
+    parser.add_argument("--font_size", type=float,
+                        default=_config_default(config, 'font_size', 12),
+                        help="Size of all plot text (titles, axis labels, ticks, annotations) except legends")
+    parser.add_argument("--legend_font_size", type=float,
+                        default=_config_default(config, 'legend_font_size', 10),
+                        help="Size of all legend text")
+    parser.add_argument("--font_family", type=str,
+                        default=_config_default(config, 'font_family', None),
+                        help="Matplotlib font family (e.g. 'CMU Serif'); ignored when --use_tex is set")
+    parser.add_argument("--use_tex", action="store_true",
+                        default=_config_default(config, 'use_tex', False),
+                        help="Render all plot text with LaTeX")
+    parser.add_argument("--no-use_tex", dest="use_tex", action="store_false",
+                        help="Render plot text with matplotlib's mathtext")
     parser.add_argument("--peak_number_labels_size", type=float,
                         default=_config_default(config, 'peak_number_labels_size', 8),
                         help="Font size for the per-peak index annotations on the all-peaks plot (applies to both raw and sub-bin labels)")

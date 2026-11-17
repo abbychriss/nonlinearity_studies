@@ -22,9 +22,10 @@ The analysis library is organized by responsibility rather than as one large mod
 - `nonlinearity.py` — nonlinearity computation per extension / at a given charge
 - `nonlinearity_correction.py` — applies the fitted nonlinearity model to an image and saves the corrected FITS
 - `resolution.py` — single-electron resolution fitting and classification
-- `plotting.py` — peak, nonlinearity, and resolution figures
+- `plotting.py` — image, peak, nonlinearity, and resolution figures
 - `summary.py` — per-extension and wide summary tables (CSV)
-- `run_nonlinearity_studies.py` — command-line interface; `cli_config.py` holds its config/argument helpers
+- `run_nonlinearity_studies.py` — command-line interface; `cli_config.py` holds its config/argument helpers. `run_pipeline(args)` runs the whole analysis and returns the intermediate results as a dict (`main` is a thin wrapper around it that returns nothing, so the `run-nonlinearity-studies` console script exits cleanly)
+- `notebook.py` — helpers for the example notebook `scripts/nonlinearity_analysis.ipynb` (see [Example notebook](#example-notebook))
 - `nonlinearity_studies.py` — backwards-compatibility shim that re-exports the public API, so existing `from nonlinearity_studies.nonlinearity_studies import ...` imports keep working
 - `gain_independent_nonlinearity/` — the gain-independent analysis, which leaves the spectrum in ADU instead of calibrating it with the zero/one gain (see [Gain-independent nonlinearity](#gain-independent-nonlinearity))
 
@@ -108,7 +109,7 @@ gain-independent-nonlinearity -j config/gain_indep_nonlinearity.json
 python -m nonlinearity_studies.gain_independent_nonlinearity.run [OPTIONS] <file_string>
 ```
 
-It takes the same JSON config mechanism and the same file/pedestal-subtraction/zero-one/peak-finding options as `run-nonlinearity-studies`, plus its own. Peak finding here is **two steps at two binnings**, with one config key each:
+It takes the same JSON config mechanism and the same file/pedestal-subtraction/zero-one/peak-finding and text-style (`font_size`, `legend_font_size`, `font_family`, `use_tex`) options as `run-nonlinearity-studies`, plus its own. Peak finding here is **two steps at two binnings**, with one config key each:
 
 - **Coarse** — `scipy.signal.find_peaks`, keyed on the shared `--nonlinearity_peakfinder_bin_factor` (default `10`), in bins per **electron**, exactly as in the standard analysis. This spectrum is histogrammed in ADU, so the number is converted to bins per ADU (divided by `ADU_PER_E`, a module-level constant in `gain_independent_nonlinearity/run.py`, nominally `1.3`) for the histogram `find_peaks` actually runs on — the physical bin width is the same as upstream either way. `--peak_finder_widths` (electrons) and `--peak_finder_buffers` (normalized to 10 bins/e-) are converted the same way, so all three knobs mean what they mean in the standard analysis.
 - **Sub-bin** — the log-parabola refinement of each of those peaks, keyed on `--sub_bin_peakfinder_bin_factor` (default `40`), in bins per **ADU**. This step has no counterpart in the standard analysis, so it is keyed in the units the spectrum is actually in, and it re-bins the same ADU spectrum over the same range rather than reusing the coarse histogram. `--sub_bin_half_width` counts bins of *this* histogram.
@@ -128,6 +129,18 @@ The all-peaks plot also overlays the sub-bin fits themselves, each drawn over ex
 | gain comparison | `compare_nonlinearity_methods.py`, `plot_nonlinearity_curves.py` | overlays the **standard** nonlinearity curve computed with every gain this analysis produces (zero/one, sub-bin, `g_fit(i)` at each `--gain_indep_compare_test_i` and at the scan's optimum, and `g_dir`); also sweeps a bare calibration gain over [1.0, 1.4] at fixed charge, and tracks alpha / alpha' against the peak number they were fit up to, with `g_fit(i)` on a twinned axis |
 
 Peak numbering is anchored on the tallest detected peak, so a low-count bump in the pedestal's left tail cannot take index 0 and shift every peak number by one. `--gain_indep_fit_n_min` (default 2) is where the running fit starts — 2 is a two-point line fit, which reproduces the standard gain exactly, so the scan covers the whole space including the standard method — and `--gain_indep_fit_n_max` caps how far up the spectrum any fit reaches. Left unset it is read off the data per extension by the same changepoint detector the standard analysis uses to place `fit_range_right`, run on the raw ADU spectrum (`x = n`, `y = q(n)`); both of the detector's stages difference out the linear and quadratic parts of the curve, so no gain division or line subtraction is needed and the estimate stays gain independent. The chosen domain is reported as `fit_n_max` in the summary. Wherever a plot draws a fitted curve, a short panel beneath the scatter carries the residuals about that curve, sharing the x axis, in both the individual and the 2x2-together figures. Each calculation has its own `--plot_<name>_individual` / `--plot_<name>_together` pair; they share the `plot_gain_indep_nonlin_*` figure-size and shared-axis settings. The comparison plots are keyed the same way, as `--plot_compare_nonlinearity_curves_*`, `--plot_alpha_alpha_prime_*`, and `--plot_nonlin_vs_gain_*`; the gain sweep behind the last of those is only run when that plot is switched on, since nothing else consumes it. With `--save_output`, every scalar lands in `gain_independent_summary.csv` next to the plots.
+
+### Example notebook
+
+`scripts/nonlinearity_analysis.ipynb` walks through the pipeline one stage at a time: the stitched image, hot columns and zero/one calibration, the all-peaks spectrum, the nonlinearity curve, and the optional nonlinearity-corrected image and gain-independent plots. Every plot is shown in a panel with one tab per extension.
+
+Set three variables at the top:
+
+- `base_config_file` — a JSON config (a path, or a file name in `config/`). Every option comes from it, for both pipelines.
+- `images` — the image(s) to analyze; accepts glob wildcards.
+- `stitch_fits` — if `True`, all the files `images` matches are stitched into one image first. If `False`, `images` must match exactly one file (already stitched, or a single image) and the notebook raises an error otherwise; nothing is stitched, but the image is still plotted under the stitching heading.
+
+A few config options are overridden because the notebook displays the plots itself: only the per-extension (`..._individual`) plots are drawn, `show_plots` and `save_output` are off (so nothing is written beyond the stitched file, the pedestal-subtraction cache and the corrected image), `verbose` is on, `extra_plot_title` is blanked, and `file_string`/`stitch_fits` come from the notebook. The all-peaks section has two boxes for the x-limits (in electrons) and a Plot button that redraws the plot for that window; it starts at the config's `plot_all_peaks_xlim`. The two zero/one-peak sections (ADU and electrons) each have a slider for the number of histogram bins (`zero_one_n_bins`, starting at the config's value): each position repeats the double-Gaussian fit at that binning and redraws, for looking only — the pedestals and gains used by the rest of the notebook are those of the run. The notebook runs `run_pipeline` and the gain-independent `main` as they are and collects the figures they draw (`notebook.capture_figures`), so it stays in step with the command-line interface.
 
 ### As a Python module
 
@@ -475,7 +488,7 @@ run-nonlinearity-studies -j config/default_nonlinearity.json --no-save_output
 - `-o`, `--output_dir DIR`: Directory for all saved output (plots, summary CSV, config snapshot). Defaults to a `plots/` folder alongside the source FITS.
 - `--show_plots` / `--no-show_plots`: Display plots interactively via `plt.show()` (default `true`). When disabled, figures are simply not shown (and are closed to free memory) instead of switching matplotlib to a non-interactive backend — useful for headless/batch runs, and still works alongside `--save_output`.
 - `-v`, `--verbose`: Print verbose output
-- `--nimages N`: Number of stitched images (used for plot labeling). Auto-detected from filenames matching `_N_stitched`
+- `--nimages N`: Number of stitched images (used for plot labeling). Auto-detected from filenames matching `_N_stitched` or `_N_<axis>_stitched` (the name `stitch_fits` gives its output)
 - `--extra_plot_title TITLE`: Additional title text prepended to every plot title
 
 ##### Plotting
@@ -572,13 +585,13 @@ The cache is **not** automatically invalidated if the source FITS file itself ch
 ### Analysis Functions
 
 - `convert_to_electrons(data, pedestal, gain, flatten=True)`: Convert ADU values to electron counts
-- `calculate_noise_gain(data, zero_one_test_range='auto', n_bins=75, fit_bounds='default')`: Determine noise and gain from charge data with data-driven zero/one peak initialization
+- `calculate_noise_gain(data, zero_one_test_range='auto', n_bins=75, fit_bounds='default', ..., data_stats=None)`: Determine noise and gain from charge data with data-driven zero/one peak initialization
 - `pedestal_subtract(data, n_std_to_mask, axis='row', use_biweight_loc=True, use_biweight_midvar=True, max_iter=5, tol=0.01)`: Vectorized per-row/column pedestal subtraction for a single extension. Iteratively sigma-clips to the zero-peak core (recomputing both location and scale from the clipped pixels each pass) so overlapping one-electron pixels don't bias the pedestal; stops early once the median per-line shift falls below `tol`.
 - `pedestal_subtract_ext_cached(data_ext, source_path, n_std_to_mask, axis='row', use_biweight_loc=True, use_biweight_midvar=True, cache_dir=None, force=False, verbose=True)`: Wraps `pedestal_subtract` across all extensions and caches the result to `<source_stem>.pedsub.fits`. Reuses the cache when the pedestal parameters and algorithm version recorded in the cached FITS header match.
 - `get_fits(file_path)`: Load FITS file data (returns list of 4 extension arrays)
 - `find_all_peaks(data, width, buffer, pedestal, noise, gain, ...)`: Single-extension peak finder
 - `fit_nonlinearity(peaks, centers, pedestal, gain, fit_range_right, ..., fix_intercept=True, known_points=None)`: Single-extension parabolic fit of the nonlinearity curve. `fix_intercept` holds the constant term at 0 (see `--nonlinearity_fit_fix_intercept`); the returned coefficients are `(a, b, c)` either way, with `c = 0` and a zero-padded row/column in `pcov` when it is on.
-- `get_zero_one_peaks_ext(data_ext, n_bins=75, fit_bounds='default', zero_one_test_range='auto')`: Per-extension zero/one peak fits; returns counts, edges, pedestals, gains, double-Gaussian popts, fit ranges
+- `get_zero_one_peaks_ext(data_ext, n_bins=75, fit_bounds='default', zero_one_test_range='auto', ..., data_stats=None)`: Per-extension zero/one peak fits; returns counts, edges, pedestals, gains, double-Gaussian popts, fit ranges. To refit at several `n_bins` (as the notebook's slider does), pass `data_stats=[pedestal_subtract.calibrate.full_data_stats(d) for d in data_ext]` so the binning-independent robust statistics are computed once.
 - `get_all_peaks_ext(data_ext, widths, buffers, pedestals, double_gauss_popts, gains, ...)`: Per-extension peak finder
 - `get_nonlinearity_ext(peaks_ext, centers_ext, pedestals, gains, fit_range_right_ext, ...)`: Per-extension nonlinearity fit
 - `estimate_fit_range_right_changepoint_ext(peaks_ext, centers_ext, pedestals, gains, win=25, factor=4.0, floor=0.15, persist=4, cross_check=True, confidence_rel_tol=0.15, ...)`: Per-extension `fit_range_right` estimate via the default changepoint detector. Returns `(values, diagnostics)`, where `diagnostics` holds the chosen value, the `var(a)` cross-check, and a per-extension `OK`/`LOW` confidence label. (Single-extension core: `estimate_fit_range_right_changepoint`.)
@@ -598,7 +611,9 @@ Each plotting function has `plot_individual` and `plot_together` options to plot
 
 - `plot_zero_one_peaks(data_ext, zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges, plot_adu_individual=False, plot_adu_together=True, plot_electrons_individual=False, plot_electrons_together=True, yscale='linear', ...)`: Visualize zero/one electron peak fits in ADU and/or electrons, individually and/or combined.
 - `plot_all_peaks(counts_ext, peaks_ext, centers_ext, xlim, ylim='none', yscale='log', draw_lines=True, ...)`: Visualize the full charge distribution with a marker at each identified peak.
-- `plot_nonlinearity(peaks_ext, parabola_coeffs, peak_charge_e_ext, charge_minus_npeak_ext, fit_range_right_ext, xlim='default', ylim='default', ...)`: Plot the nonlinearity curve and parabolic fit. `xlim`/`ylim` accept `'default'`, `'none'`, a single `(left, right)` applied to all extensions, or a list of 4 per-extension tuples.
+- `plot_nonlinearity(peaks_ext, parabola_coeffs, peak_charge_e_ext, charge_minus_npeak_ext, fit_range_right_ext, xlim='default', ylim='default', overlay=None, ...)`: Plot the nonlinearity curve and parabolic fit. `xlim`/`ylim` accept `'default'`, `'none'`, a single `(left, right)` applied to all extensions, or a list of 4 per-extension tuples. `overlay=(peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs)` draws a second dataset (e.g. the nonlinearity-corrected image's) on the same axes, in `overlay_scatter_color`/`overlay_line_color` (purple/orange), with both datasets named by `overlay_names` in the legend.
+- `set_plot_style(font_size, legend_font_size, use_tex=False, font_family=None)`: Apply the text style of the `font_size` / `legend_font_size` / `use_tex` / `font_family` config options to matplotlib's rcParams; both pipelines call it at the start of a run.
+- `plot_images(panels, panel_labels=None, stack='horizontal', vmin=None, vmax=None, norm=LogNorm, norm_kwargs=None, cmap='gray', ...)`: One figure per extension showing 2-D pixel arrays on a greyscale with a shared colorbar. `panels` is a list of per-extension image lists; each extension's panels are drawn side by side (`stack='horizontal'`) or one above the other (`'vertical'`) on one shared norm. `norm` is a matplotlib normalization class: `LogNorm` (default), or e.g. `SymLogNorm` with `norm_kwargs=dict(linthresh=1)` to also show values <= 0, or `PowerNorm` with `norm_kwargs=dict(gamma=0.3)`. Unless `vmin`/`vmax` are given, the norm spans the 1st-99.9th percentile of the pixels (the positive ones for `LogNorm`). Individual-only: it has no `plot_together` option.
 - `plot_resolution(results_ext, charges, sigma_well=0.25, sigma_limit=0.5, plot_individual=False, plot_together=True, ...)`: Plot the resolution windows from `resolution_at_charge_ext` — data histogram, the individual comb components, the comb sum, the single-Gaussian null, and a verdict annotation box. `plot_individual` makes one figure per (extension, charge); `plot_together` makes one 2×2 grid per charge.
 
 ### Utility
@@ -619,6 +634,7 @@ nonlinearity_studies/                # Repository root
 │   ├── __init__.py                  # Package initialization
 │   ├── nonlinearity_studies.py      # Core analysis + plotting functions
 │   ├── stitch_fits.py               # FITS image stitching utility
+│   ├── notebook.py                  # Helpers for scripts/nonlinearity_analysis.ipynb
 │   └── run_nonlinearity_studies.py  # Command-line interface
 ├── pyproject.toml                   # Build system configuration
 ├── setup.py                         # Package configuration

@@ -4,6 +4,7 @@ plotting — split out of nonlinearity_studies.py.
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import LogNorm
 from pathlib import Path
 from pedestal_subtract.core import _finish_fig
 from pedestal_subtract.plotting import format_title
@@ -15,6 +16,21 @@ from .summary import _normalize_charges
 _RESOLUTION_VERDICT_COLORS = {
     'well resolved': 'tab:green', 'marginal': 'tab:orange', 'unresolved': 'tab:red',
 }
+
+
+def set_plot_style(font_size, legend_font_size, use_tex=False, font_family=None):
+    """Apply the text style of the font_size / legend_font_size / use_tex / font_family config options."""
+    # Uniform text size for everything except legends, which use legend_font_size.
+    plt.rcParams.update({'font.size': font_size, 'legend.fontsize': legend_font_size, 'legend.title_fontsize': legend_font_size,
+                         'axes.titlesize': font_size, 'axes.labelsize': font_size,
+                         'xtick.labelsize': font_size, 'ytick.labelsize': font_size,
+                         'text.usetex': use_tex})
+    # Same font handling as meta_studies: use_tex always means Computer Modern Roman and
+    # overrides font_family.
+    if use_tex:
+        plt.rcParams.update({'font.family': 'serif', 'font.serif': ['Computer Modern Roman']})
+    elif font_family:
+        plt.rcParams.update({'font.family': font_family, 'axes.unicode_minus': False})
 
 
 def _sci(value, sig=3):
@@ -121,6 +137,11 @@ def _windowed_hist(data, window, bin_factor):
     counts, edges = np.histogram(data_window, bins=bins, range=window)
     centers = 0.5 * (edges[1:] + edges[:-1])
     return counts, centers
+
+
+def _draw_hist(ax, centers, counts, bin_width):
+    """Filled step histogram as ONE artist (ax.bar makes a Rectangle per bin: ~50 s for 4 x 16k bins)."""
+    ax.stairs(counts, np.append(centers - bin_width / 2, centers[-1] + bin_width / 2), fill=True)
 
 
 BINS_PER_E = r'bins/$e^-$'
@@ -293,7 +314,7 @@ def plot_all_peaks(counts_ext,
             fig, ax = plt.subplots(1, 1, figsize=individual_figsize, constrained_layout=True)
             if show_titles:
                 ax.set_title(format_title(additional_title, suptitle, nimages, f'EXT {ext + 1}'), pad=10)
-            ax.bar(plot_centers, counts, align='center', edgecolor='none', linewidth=0, width=bin_width)
+            _draw_hist(ax, plot_centers, counts, bin_width)
             if sub_bin_fits_ext is not None:
                 _draw_sub_bin_fits(ax, sub_bin_fits_ext[ext], bin_width, alpha=sub_bin_fit_alpha)
             ax.set_xlabel(xlabel)
@@ -391,7 +412,7 @@ def plot_all_peaks(counts_ext,
                 plot_centers = centers
             bin_width = plot_centers[1] - plot_centers[0]
 
-            ax.bar(plot_centers, counts, align='center', edgecolor='none', linewidth=0, width=bin_width)
+            _draw_hist(ax, plot_centers, counts, bin_width)
             if sub_bin_fits_ext is not None:
                 _draw_sub_bin_fits(ax, sub_bin_fits_ext[ext], bin_width, alpha=sub_bin_fit_alpha)
             ax.set_xlabel(xlabel)
@@ -521,6 +542,8 @@ def plot_nonlinearity(peaks_ext,
                       known_points=None,
                       parabola_coeffs_no_known=None,
                       known_colors=('orange', 'green', 'purple', 'brown', 'magenta', 'cyan'),
+                      overlay=None, overlay_names=('Original', 'NL-corrected'),
+                      overlay_scatter_color='purple', overlay_line_color='orange',
                       plot_individual=False,
                       plot_together=False,
                       sharex=True,
@@ -557,6 +580,20 @@ def plot_nonlinearity(peaks_ext,
         for i, (x, y) in enumerate(zip(*_known_xy(ext))):
             ax.scatter(x, y, c=known_colors[i % len(known_colors)], s=30, zorder=5, label=f'known NL({x:g}e-) = {y:.2f}e-')
 
+    def _plot_data(ax, ext):
+        """The nonlinearity points and fitted curve; with ``overlay`` (a second dataset as
+        (peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs)) both are drawn on
+        the same axes, each point set and curve named in the legend."""
+        datasets = [(peak_charge_e_ext, charge_minus_npeak_ext, parabola_coeffs, scatter_color, line_color,
+                     overlay_names[0] if overlay is not None else None)]
+        if overlay is not None:
+            datasets.append((*overlay, overlay_scatter_color, overlay_line_color, overlay_names[1]))
+        for xs, ys, coeffs, sc, lc, name in datasets:
+            fit_label = _parabola_label(coeffs[ext])
+            ax.plot(xs[ext], parabola(xs[ext], *coeffs[ext]), color=lc,
+                    label=fit_label if name is None else f'{name} fit: {fit_label}')
+            ax.scatter(xs[ext], ys[ext], c=sc, s=s, alpha=alpha, label=None if name is None else f'{name} data')
+
     # Precompute auto ylims: per extension, [min-10, max+10] of the nonlinearity
     # points within the displayed xlim. With sharey, every extension uses the
     # global min/max (which need not come from the same extension).
@@ -582,16 +619,13 @@ def plot_nonlinearity(peaks_ext,
                 ax.set_title(format_title(additional_title, suptitle, nimages, f'EXT {ext + 1}'), pad=10)
             ax.grid()
 
-            parabola_coeff=parabola_coeffs[ext]
             peak_charge_e=peak_charge_e_ext[ext]
             charge_minus_npeak=charge_minus_npeak_ext[ext]
             fit_range_right=fit_range_right_ext[ext]
             xlim_e = xlim[ext] if isinstance(xlim, list) else xlim
             ylim_e = ylim[ext] if isinstance(ylim, list) else ylim
 
-            ax.plot(peak_charge_e, parabola(peak_charge_e, *parabola_coeff), color=line_color,
-                        label=_parabola_label(parabola_coeff))
-            ax.scatter(peak_charge_e, charge_minus_npeak, c=scatter_color, s=s, alpha=alpha)
+            _plot_data(ax, ext)
             _plot_no_known(ax, ext)
             _plot_known(ax, ext)
             ax.legend(loc="upper right")
@@ -628,15 +662,12 @@ def plot_nonlinearity(peaks_ext,
             ax = axs[ext]
             ax.grid()
 
-            parabola_coeff=parabola_coeffs[ext]
             charge_minus_npeak=charge_minus_npeak_ext[ext]
             fit_range_right=fit_range_right_ext[ext]
             xlim_e = xlim[ext] if isinstance(xlim, list) else xlim
             ylim_e = ylim[ext] if isinstance(ylim, list) else ylim
 
-            ax.plot(peak_charge_e, parabola(peak_charge_e, *parabola_coeff), color=line_color,
-                        label=_parabola_label(parabola_coeff))
-            ax.scatter(peak_charge_e, charge_minus_npeak, c=scatter_color, s=s, alpha=alpha)
+            _plot_data(ax, ext)
             _plot_no_known(ax, ext)
             _plot_known(ax, ext)
             ax.legend(loc="upper right")
@@ -668,6 +699,64 @@ def plot_nonlinearity(peaks_ext,
 
         if save_plots:
             output_path = fig_name.with_suffix('.jpeg')
+            plt.savefig(str(output_path), dpi=dpi)
+            print(f'Saved plot to {output_path}')
+        _finish_fig(show_plots)
+
+
+def plot_images(panels, panel_labels=None, stack='horizontal',
+                vmin=None, vmax=None, norm=LogNorm, norm_kwargs=None, cmap='gray', cbar_label='Pixel charge (ADU)',
+                individual_figsize=(10, 5),
+                additional_title='',
+                suptitle='Image',
+                nimages=10,
+                show_titles=True,
+                save_plots=False,
+                show_plots=True,
+                fig_path='./', file='image', suffix='image',
+                dpi=350):
+    """One figure per extension showing 2-D pixel arrays on a log greyscale with a colorbar.
+
+    ``panels`` is a list of images (each a per-extension list of 2-D arrays). Every
+    panel of an extension is drawn side by side (``stack='horizontal'``) or one above the
+    other (``'vertical'``), sharing one norm and one colorbar so they are directly comparable.
+
+    ``norm`` is a matplotlib normalization class (``LogNorm``, the default, or e.g.
+    ``SymLogNorm`` -- which also shows values <= 0, with ``norm_kwargs=dict(linthresh=1)``
+    -- or ``PowerNorm`` with ``norm_kwargs=dict(gamma=0.3)``). Unless ``vmin``/``vmax``
+    are given, it spans the 1st-99.9th percentile of the extension's pixels across its
+    panels (the positive ones only for ``LogNorm``, which cannot show anything <= 0).
+    """
+    labels = panel_labels if panel_labels is not None else [None] * len(panels)
+    for ext in range(len(panels[0])):
+        images = [np.asarray(panel[ext]) for panel in panels]
+        pixels = np.concatenate([im[im > 0] if norm is LogNorm else im.ravel() for im in images])
+        panel_norm = norm(vmin=vmin if vmin is not None else np.percentile(pixels, 1),
+                          vmax=vmax if vmax is not None else np.percentile(pixels, 99.9),
+                          **(norm_kwargs or {}))
+
+        shape = (1, len(images)) if stack == 'horizontal' else (len(images), 1)
+        fig, axs = plt.subplots(*shape, figsize=individual_figsize, constrained_layout=True,
+                                sharex=True, sharey=True, squeeze=False)
+        axs = axs.ravel()
+        for ax, image, label in zip(axs, images, labels):
+            # matplotlib's default antialiasing: 'nearest' would sample only ~1 column in 8 of a
+            # 3500-column image, dropping thin features such as tracks
+            mappable = ax.imshow(image, cmap=cmap, norm=panel_norm, aspect='auto')
+            ax.set_xlabel('Column')
+            ax.set_ylabel('Row')
+            if label:
+                ax.set_title(label)
+        fig.colorbar(mappable, ax=axs.tolist(), label=cbar_label)
+        if show_titles:
+            title = format_title(additional_title, suptitle, nimages, f'EXT {ext + 1}')
+            if len(images) > 1:
+                fig.suptitle(title)
+            else:
+                axs[0].set_title(title, pad=10)
+
+        if save_plots:
+            output_path = Path(fig_path) / f'{Path(file).stem}_{suffix}_EXT{ext + 1}.jpeg'
             plt.savefig(str(output_path), dpi=dpi)
             print(f'Saved plot to {output_path}')
         _finish_fig(show_plots)

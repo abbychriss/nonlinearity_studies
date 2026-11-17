@@ -81,7 +81,7 @@
     "raw_peak_location_vertical_line": true,
     "sub_bin_peak_number": true,
     "sub_bin_peak_location_vertical_line": true,
-    "peak_number_labels_size": 10,
+    "peak_number_labels_size": 12,
     "font_size": 12,
     "legend_font_size": 10,
     "font_family": null,

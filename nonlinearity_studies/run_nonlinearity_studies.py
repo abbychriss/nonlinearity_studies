@@ -64,6 +64,7 @@ from .cli_config import (
     _run_hash,
     _parse_lim,
 )
+from .plotting import set_plot_style
 
 # Handle imports for both direct execution and module import
 if __name__ == "__main__":
@@ -120,25 +121,28 @@ else:
 def main(args=None):
     """
     The main executable function of the script.
-    
+
     Args:
         args: The Namespace object containing the parsed command-line arguments.
               If None, arguments are parsed from command line.
-    """
-    if args is None:
-        args = init_argparse()
 
-    # Uniform text size for everything except legends, which use legend_font_size.
-    plt.rcParams.update({'font.size': args.font_size, 'legend.fontsize': args.legend_font_size, 'legend.title_fontsize': args.legend_font_size,
-                         'axes.titlesize': args.font_size, 'axes.labelsize': args.font_size,
-                         'xtick.labelsize': args.font_size, 'ytick.labelsize': args.font_size,
-                         'text.usetex': args.use_tex})
-    # Same font handling as meta_studies: use_tex always means Computer Modern Roman and
-    # overrides font_family.
-    if args.use_tex:
-        plt.rcParams.update({'font.family': 'serif', 'font.serif': ['Computer Modern Roman']})
-    elif args.font_family:
-        plt.rcParams.update({'font.family': args.font_family, 'axes.unicode_minus': False})
+    Returns None: the console script passes main()'s return value to sys.exit(), so
+    anything else would turn into a nonzero exit code. Use run_pipeline for the results.
+    """
+    run_pipeline(init_argparse() if args is None else args)
+
+
+def run_pipeline(args):
+    """
+    Run the full analysis for a parsed-args Namespace (see init_argparse) and return the
+    intermediate results as a dict: the analyzed file (``fits_path``), the output folder
+    (``fig_path``), the raw and pedestal-subtracted frames (``data_ext`` is the part used for
+    the zero/one fit), the zero/one calibration with the settings to repeat its fit and redraw
+    its plots (``zero_one_fit_kwargs``, ``zero_one_plot_kwargs``), the all-peaks histogram with
+    the settings to redraw its plot (``all_peaks_plot_kwargs``), and the nonlinearity curve and
+    its fit. Used by main() and by the example notebook.
+    """
+    set_plot_style(args.font_size, args.legend_font_size, args.use_tex, args.font_family)
 
     # If a non-empty extra_plot_title doesn't already end with a separator,
     # append a newline so it sits on its own line above the default title.
@@ -243,7 +247,6 @@ def main(args=None):
             stitched_file = stitch_fits(
                 input_dir / input_pattern,
                 out_path=out_path,
-                print_header=verbose,
                 axis=args.stitch_fits_axis,
             )
             if stitched_file is None:
@@ -383,7 +386,7 @@ def main(args=None):
     # Extract number of stitched images from filename; --nimages arg or config overrides.
     # A single, unstitched image carries no count in its name -> it is exactly one image.
     nimages = None
-    match = re.search(r'_(\d+)_stitched', fits_path)
+    match = re.search(r'_(\d+)_(?:vertical_|horizontal_)?stitched', fits_path)
     if match:
         nimages = int(match.group(1))
     elif stitched_dir_name not in fits_file_path.parts:
@@ -432,15 +435,17 @@ def main(args=None):
                           for ext in range(len(data_ext))]
         print(f'Using guess for gains: {gain_seeds_ext}')
 
-    # Fit zeroth and first electron peaks to double gaussians
-    zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges = get_zero_one_peaks_ext(
-        data_ext,
+    # Fit zeroth and first electron peaks to double gaussians. The settings are kept in the
+    # returned results so the fit can be repeated at another binning (the notebook's sliders).
+    zero_one_fit_kwargs = dict(
         n_bins=args.zero_one_n_bins,
         fit_bounds='default',
         window_left_scale=args.zero_one_window_left_scale,
         window_right_scale=args.zero_one_window_right_scale,
         gain_seed=1.0 if already_electrons else args.zero_one_gain_guess,
     )
+    zero_one_counts_ext, zero_one_edges_ext, pedestals, gains, double_gauss_popts, zero_one_ranges = get_zero_one_peaks_ext(
+        data_ext, **zero_one_fit_kwargs)
     if already_electrons:
         gains = [1.0] * len(gains)
 
@@ -630,79 +635,76 @@ def main(args=None):
         except Exception as exc:  # pragma: no cover - defensive
             print(f'Warning: could not update meta study run ({exc}).')
 
-    # Fit a double gaussian to zero + 1 electron peak in each extension
+    # Plot the zero/one peak fits. The settings are kept in the returned results so the plots
+    # can be redrawn for a re-fit at another binning (the notebook's sliders).
+    zero_one_plot_kwargs = dict(
+        individual_figsize=tuple(args.plot_zero_one_individual_figsize),
+        subplots_figsize=tuple(args.plot_zero_one_subplots_figsize),
+        xlim=args.plot_zero_one_xlim,
+        ylim=args.plot_zero_one_ylim,
+        ylim_electrons=args.plot_zero_one_ylim_electrons,
+        electron_fit_mode=args.electron_fit_mode or 'transform',
+        additional_title=f'{args.extra_plot_title}' if args.extra_plot_title else '',
+        suptitle='Calibration Fit to Zero-One Peaks' if args.default_titles else None,
+        nimages=nimages,
+        yscale=args.plot_zero_one_yscale,
+        fontsize=12,
+        n=100,
+        plot_adu_individual=args.plot_zero_one_ADU_individual,
+        plot_adu_together=args.plot_zero_one_ADU_together,
+        plot_electrons_individual=args.plot_zero_one_electrons_individual,
+        plot_electrons_together=args.plot_zero_one_electrons_together,
+        sharex=args.plot_zero_one_sharex,
+        sharey=args.plot_zero_one_sharey,
+        show_titles=args.show_titles,
+        save_plots=save_output,
+        show_plots=args.show_plots,
+        fig_path=str(fig_path),
+        file=image_name,
+        dpi=350,
+    )
     if do_plot_zero_one_peaks:
-        plot_zero_one_peaks(data_ext,
-                            zero_one_counts_ext,
-                            zero_one_edges_ext,
-                            pedestals,
-                            gains,
-                            double_gauss_popts,
-                            zero_one_ranges,
-                            individual_figsize=tuple(args.plot_zero_one_individual_figsize),
-                            subplots_figsize=tuple(args.plot_zero_one_subplots_figsize),
-                            xlim=args.plot_zero_one_xlim,
-                            ylim=args.plot_zero_one_ylim,
-                            ylim_electrons=args.plot_zero_one_ylim_electrons,
-                            electron_fit_mode=args.electron_fit_mode or 'transform',
-                            additional_title=f'{args.extra_plot_title}' if args.extra_plot_title else '',
-                            suptitle='Calibration Fit to Zero-One Peaks' if args.default_titles else None,
-                            nimages=nimages,
-                            yscale=args.plot_zero_one_yscale,
-                            fontsize=12,
-                            n=100,
-                            plot_adu_individual=args.plot_zero_one_ADU_individual,
-                            plot_adu_together=args.plot_zero_one_ADU_together,
-                            plot_electrons_individual=args.plot_zero_one_electrons_individual,
-                            plot_electrons_together=args.plot_zero_one_electrons_together,
-                            sharex=args.plot_zero_one_sharex,
-                            sharey=args.plot_zero_one_sharey,
-                            show_titles=args.show_titles,
-                            save_plots=save_output,
-                            show_plots=args.show_plots,
-                            fig_path=str(fig_path),
-                            file=image_name,
-                            dpi=350)
+        plot_zero_one_peaks(data_ext, zero_one_counts_ext, zero_one_edges_ext, pedestals, gains,
+                            double_gauss_popts, zero_one_ranges, **zero_one_plot_kwargs)
 
+    # Everything plot_all_peaks takes besides the peaks themselves. Kept in the returned results
+    # so the plot can be redrawn for another window (the example notebook's x-limit control).
+    all_peaks_plot_kwargs = dict(
+        yscale=args.plot_all_peaks_yscale,
+        data_ext=data_electrons_ext,
+        window_bin_factor=args.plot_all_peaks_window_bin_factor,
+        peakfinder_bin_factor=args.nonlinearity_peakfinder_bin_factor,
+        plot_individual=args.plot_all_peaks_individual,
+        plot_together=args.plot_all_peaks_together,
+        sharex=args.plot_all_peaks_sharex,
+        sharey=args.plot_all_peaks_sharey,
+        show_titles=args.show_titles,
+        raw_peak_location_vertical_line=args.raw_peak_location_vertical_line,
+        linecolor='r',
+        linestyle='--',
+        raw_peak_number=args.raw_peak_number,
+        peak_number_labels_size=args.peak_number_labels_size,
+        individual_figsize=tuple(args.plot_all_peaks_individual_figsize),
+        subplots_figsize=tuple(args.plot_all_peaks_subplots_figsize),
+        additional_title=args.extra_plot_title,
+        suptitle='Pixel Charge Peak-Finder' if args.default_titles else None,
+        nimages=nimages,
+        save_plots=save_output,
+        show_plots=args.show_plots,
+        fig_path=str(fig_path),
+        file=image_name,
+        dpi=350,
+    )
+    # Only override the all-peaks x/y limits when the user passes them on the CLI.
+    # When a limit flag is absent, omit it so plot_all_peaks' own default applies
+    # (its xlim default is the 500-510 e- window) instead of forcing the full
+    # histogram range here.
+    if args.plot_all_peaks_xlim is not None:
+        all_peaks_plot_kwargs['xlim'] = _parse_lim(args.plot_all_peaks_xlim, n_ext=len(data_ext))
+    if args.plot_all_peaks_ylim is not None:
+        all_peaks_plot_kwargs['ylim'] = _parse_lim(args.plot_all_peaks_ylim, n_ext=len(data_ext))
     if do_plot_all_peaks:
-        # Only override the all-peaks x/y limits when the user passes them on the CLI.
-        # When a limit flag is absent, omit it so plot_all_peaks' own default applies
-        # (its xlim default is the 500-510 e- window) instead of forcing the full
-        # histogram range here.
-        all_peaks_limit_kwargs = {}
-        if args.plot_all_peaks_xlim is not None:
-            all_peaks_limit_kwargs['xlim'] = _parse_lim(args.plot_all_peaks_xlim, n_ext=len(data_ext))
-        if args.plot_all_peaks_ylim is not None:
-            all_peaks_limit_kwargs['ylim'] = _parse_lim(args.plot_all_peaks_ylim, n_ext=len(data_ext))
-
-        plot_all_peaks(counts_ext,
-                    peaks_ext,
-                    centers_ext,
-                    **all_peaks_limit_kwargs,
-                    yscale=args.plot_all_peaks_yscale,
-                    data_ext=data_electrons_ext,
-                    window_bin_factor=args.plot_all_peaks_window_bin_factor,
-                    peakfinder_bin_factor=args.nonlinearity_peakfinder_bin_factor,
-                    plot_individual=args.plot_all_peaks_individual,
-                    plot_together=args.plot_all_peaks_together,
-                    sharex=args.plot_all_peaks_sharex,
-                    sharey=args.plot_all_peaks_sharey,
-                    show_titles=args.show_titles,
-                    raw_peak_location_vertical_line=args.raw_peak_location_vertical_line,
-                    linecolor='r',
-                    linestyle='--',
-                    raw_peak_number=args.raw_peak_number,
-                    peak_number_labels_size=args.peak_number_labels_size,
-                    individual_figsize=tuple(args.plot_all_peaks_individual_figsize),
-                    subplots_figsize=tuple(args.plot_all_peaks_subplots_figsize),
-                    additional_title=args.extra_plot_title,
-                    suptitle='Pixel Charge Peak-Finder' if args.default_titles else None,
-                    nimages=nimages,
-                    save_plots=save_output,
-                    show_plots=args.show_plots,
-                    fig_path=str(fig_path),
-                    file=image_name,
-                    dpi=350)
+        plot_all_peaks(counts_ext, peaks_ext, centers_ext, **all_peaks_plot_kwargs)
 
     if resolution_results_ext is not None and (
         args.plot_resolution_individual or args.plot_resolution_together
@@ -758,7 +760,28 @@ def main(args=None):
                         fig_path=str(fig_path),
                         file=image_name,
                         dpi=350)
-        
+
+    return dict(
+        fits_path=fits_file_path,
+        fig_path=fig_path,
+        nimages=nimages,
+        raw_data_ext=raw_data_ext,
+        full_data_ext=full_data_ext,
+        data_ext=data_ext,
+        zero_one_fit_kwargs=zero_one_fit_kwargs,
+        zero_one_plot_kwargs=zero_one_plot_kwargs,
+        pedestals=pedestals,
+        gains=gains,
+        counts_ext=counts_ext,
+        peaks_ext=peaks_ext,
+        centers_ext=centers_ext,
+        all_peaks_plot_kwargs=all_peaks_plot_kwargs,
+        peak_charge_e_ext=peak_charge_e_ext,
+        charge_minus_npeak_ext=charge_minus_npeak_ext,
+        parabola_coeffs=parabola_coeffs,
+        fit_range_right_ext=fit_range_right_ext,
+    )
+
 
 def init_argparse(args=None):
     """

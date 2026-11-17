@@ -11,12 +11,13 @@ Analysis library, organized by responsibility:
 - nonlinearity     : nonlinearity computation per extension / at a charge
 - nonlinearity_correction : apply the fitted nonlinearity model to an image
 - resolution       : single-electron resolution fitting and classification
-- plotting         : peak, nonlinearity, and resolution figures
+- plotting         : image, peak, nonlinearity, and resolution figures
 - summary          : per-extension and wide summary tables (CSV)
 
 Other modules:
 - run_nonlinearity_studies : command-line interface for running analyses
 - cli_config               : config loading & argument-normalization helpers
+- notebook                 : helpers for the example notebook (scripts/nonlinearity_analysis.ipynb)
 - nonlinearity_studies     : backwards-compatibility shim re-exporting the above
 
 The zero/one-electron peak fitting, pedestal subtraction, and FITS I/O come from
@@ -37,6 +38,7 @@ from .nonlinearity_studies import (
     get_nonlinearity_ext,
     get_nonlinearity_at_ext,
     correct_nonlinearity_ext,
+    is_nl_corrected,
     resolution_at_charge,
     resolution_at_charge_ext,
     classify_resolution,
@@ -49,6 +51,7 @@ from .nonlinearity_studies import (
     plot_zero_one_peaks,
     plot_all_peaks,
     plot_nonlinearity,
+    plot_images,
     plot_resolution,
     pedestal_subtract_ext_cached,
     estimate_optimal_fit_range_right_ext,
@@ -69,6 +72,7 @@ __all__ = [
     "get_nonlinearity_ext",
     "get_nonlinearity_at_ext",
     "correct_nonlinearity_ext",
+    "is_nl_corrected",
     "resolution_at_charge",
     "resolution_at_charge_ext",
     "classify_resolution",
@@ -81,6 +85,7 @@ __all__ = [
     "plot_zero_one_peaks",
     "plot_all_peaks",
     "plot_nonlinearity",
+    "plot_images",
     "plot_resolution",
     "pedestal_subtract_ext_cached",
     "estimate_optimal_fit_range_right_ext",

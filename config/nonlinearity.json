@@ -19,7 +19,7 @@
     "show_plots": true,
     "save_output": true,
     "output_dir": null,
-    "verbose": true,
+    "verbose": false,
     "extra_plot_title": "CTI Test: VClocks Variant 1 (all lows 8.0V)",
     "resolution_window": 10,
     "resolution_sigma_well": 0.25,
@@ -83,8 +83,8 @@
     "raw_peak_number": true,
     "raw_peak_location_vertical_line": true,
     "peak_number_labels_size": 14,
-    "font_size": 16,
+    "font_size": 20,
     "font_family": null,
     "use_tex": false,
-    "legend_font_size": 12
+    "legend_font_size": 16
 }
