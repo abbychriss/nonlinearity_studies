@@ -54,7 +54,8 @@ def load_args(init_argparse, base_config_file, images, stitch_fits, plots=None):
     """
     config = Path(base_config_file)
     config = config if config.exists() else CONFIG_DIR / config
-    matches = sorted(glob.glob(images))
+    images = str(Path(images).expanduser())  # no shell here to expand a leading ~
+    matches = sorted(glob.glob(images, recursive=True))
     if not matches:
         raise FileNotFoundError(f'No files match {images}')
     if not stitch_fits and len(matches) > 1:

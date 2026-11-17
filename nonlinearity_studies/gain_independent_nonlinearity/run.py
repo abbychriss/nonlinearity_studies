@@ -173,7 +173,7 @@ def main(args=None):
 
     # --- file resolution: identical to run_nonlinearity_studies.py -------------
     if not args.stitch_fits and glob.has_magic(args.file_string):
-        matches = sorted(glob.glob(args.file_string))
+        matches = sorted(glob.glob(args.file_string, recursive=True))
         if not matches:
             print(f'\nError: no file matches the pattern: {args.file_string}\n')
             sys.exit(1)

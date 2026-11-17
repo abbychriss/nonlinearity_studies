@@ -156,7 +156,7 @@ def run_pipeline(args):
         # literal '*' path never exists and the check below reports "file not found".
         # The single-file (non-stitch) path analyzes one image, so an ambiguous match
         # is an error: narrow the pattern or use --stitch_fits to combine the files.
-        matches = sorted(glob.glob(args.file_string))
+        matches = sorted(glob.glob(args.file_string, recursive=True))
         if not matches:
             print(f'\nError: no file matches the pattern: {args.file_string}\n')
             sys.exit(1)
